@@ -11,13 +11,13 @@
 :root {
   --bg: #faf9f5; --panel: #f0eee6; --text: #29261b; --muted: #73726c;
   --accent: #c2410c; --border: #e3e1d7; --code-bg: #f4f3ec; --inline-code: rgba(0,0,0,.055);
-  --active-bg: rgba(194,65,12,.09);
+  --active-bg: rgba(194,65,12,.09); --ok: #3d8b5f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #262624; --panel: #1f1e1b; --text: #e8e6df; --muted: #9a988f;
     --accent: #e08b5d; --border: #3a3833; --code-bg: #1e1d1a; --inline-code: rgba(255,255,255,.09);
-    --active-bg: rgba(224,139,93,.14);
+    --active-bg: rgba(224,139,93,.14); --ok: #6cc08b;
   }
 }
 * { box-sizing: border-box; }
@@ -31,8 +31,16 @@ body {
   width: 235px; flex-shrink: 0; height: 100%; overflow-y: auto;
   background: var(--panel); border-right: 1px solid var(--border); padding: 14px 10px 40px;
 }
-#sidebar h1 { font-size: 15px; margin: 4px 8px 14px; letter-spacing: .02em; }
+#sidebar h1 { font-size: 15px; margin: 4px 8px 10px; letter-spacing: .02em; }
 #sidebar h1 a { color: var(--text); text-decoration: none; }
+#ans-toggle {
+  display: block; width: calc(100% - 16px); margin: 0 8px 12px; padding: 5px 8px;
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+#ans-toggle:hover { color: var(--accent); border-color: var(--accent); }
+#ans-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--active-bg); }
 #sidebar details { margin-bottom: 2px; }
 #sidebar details details { margin-left: 12px; }
 #sidebar summary {
@@ -70,6 +78,9 @@ body {
   margin: .7em 0; padding: .05em .9em; color: var(--muted);
   border-left: 3px solid var(--accent); background: var(--inline-code); border-radius: 0 8px 8px 0;
 }
+/* 自测题答案：全局开关控制显示/隐藏（侧边栏「答案」按钮） */
+.md blockquote.answer { border-left-color: var(--ok); color: var(--text); }
+body.hide-answers .md blockquote.answer { display: none; }
 .md hr { border: none; border-top: 1px solid var(--border); margin: 1.4em 0; }
 .md img { max-width: 100%; border-radius: 8px; }
 .md a { color: var(--accent); text-decoration: none; }
@@ -101,7 +112,7 @@ body {
 </style>
 </head>
 <body>
-<aside id="sidebar"><h1><a href="#bagu.md">📚 LLM/VLM 八股笔记</a></h1><div id="tree">加载目录…</div></aside>
+<aside id="sidebar"><h1><a href="#bagu.md">📚 LLM/VLM 八股笔记</a></h1><button id="ans-toggle" type="button"></button><div id="tree">加载目录…</div></aside>
 <main id="main"><article id="content" class="md"></article></main>
 <script src="assets/marked.min.js"></script>
 <script src="assets/highlight.min.js"></script>
@@ -185,6 +196,10 @@ async function load(path, anchor) {
     if (s && !/^([a-z]+:|\/|#)/i.test(s)) im.src = base + s;
   });
   $content.querySelectorAll('h1,h2,h3,h4').forEach(h => h.id = slug(h.textContent));
+  /* 以「答：」开头的引用块 = 自测题答案，受侧边栏全局开关控制 */
+  $content.querySelectorAll('blockquote').forEach(b => {
+    if (/^\s*答\s*[:：]/.test(b.textContent)) b.classList.add('answer');
+  });
   $content.querySelectorAll('a').forEach(a => {
     const h = a.getAttribute('href') || '';
     if (/^([a-z]+:|#)/i.test(h)) { if (/^[a-z]+:/i.test(h)) a.target = '_blank'; return; }
@@ -218,8 +233,24 @@ async function load(path, anchor) {
   if (target) target.scrollIntoView(); else document.getElementById('main').scrollTop = 0;
 }
 
+/* ---- 全局开关：显示 / 隐藏所有页面的自测题答案（记住选择） ---- */
+const $ans = document.getElementById('ans-toggle');
+let hideAnswers = false;
+try { hideAnswers = localStorage.getItem('hideAnswers') === '1'; } catch (e) { /* 隐私模式等 */ }
+function applyAnswers() {
+  document.body.classList.toggle('hide-answers', hideAnswers);
+  $ans.classList.toggle('on', hideAnswers);
+  $ans.textContent = hideAnswers ? '🙈 答案已隐藏（点击显示）' : '👁 答案已显示（点击隐藏）';
+}
+$ans.addEventListener('click', () => {
+  hideAnswers = !hideAnswers;
+  try { localStorage.setItem('hideAnswers', hideAnswers ? '1' : '0'); } catch (e) { /* 忽略 */ }
+  applyAnswers();
+});
+
 (async function init() {
   marked.use({ gfm: true, mangle: false, headerIds: false });
+  applyAnswers();
   try {
     const tree = await buildTree();
     $tree.innerHTML = '';
