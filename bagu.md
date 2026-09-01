@@ -106,7 +106,7 @@
             - data synthesis, cot
             - agentic sft, loss
             - packing, masking
-        - preference learning·
+        - preference learning
             - rm, rlhf
             - dpo
         - rl
