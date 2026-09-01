@@ -109,6 +109,8 @@ body {
 <script>
 const $content = document.getElementById('content');
 const $tree = document.getElementById('tree');
+/* 只在本地存在的私密笔记(见 .gitignore); 线上取不到就不显示 */
+const PRIVATE = ['notes/interview.md'];
 
 /* ---- math: 先保护代码, 再抽出公式占位, 渲染后回填 katex ---- */
 function renderMarkdown(src) {
@@ -223,6 +225,11 @@ async function load(path, anchor) {
     $tree.innerHTML = '';
     $tree.appendChild(docLink('bagu.md', 'doc root'));
     for (const f of tree.files) $tree.appendChild(docLink(f));
+    /* 本地私密笔记: 被 .gitignore 排除, 只有本地存在; 线上 404 时自动跳过 */
+    for (const p of PRIVATE) {
+      try { if ((await fetch(p, { method: 'HEAD' })).ok) $tree.appendChild(docLink(p)); }
+      catch (e) { /* 不存在就不显示 */ }
+    }
     for (const d of tree.dirs) $tree.appendChild(renderNode(d));
   } catch (e) { $tree.textContent = '目录加载失败: ' + e; }
   const go = () => {
