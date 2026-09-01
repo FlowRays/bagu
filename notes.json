@@ -1,0 +1,105 @@
+{
+ "path": "notes/",
+ "files": [
+  "notes/priority.md",
+  "notes/render-test.md"
+ ],
+ "dirs": [
+  {
+   "path": "notes/01-llm-arch/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/02-inference-serving/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/03-training-fundamentals/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/04-distributed-infra/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/05-pretraining/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/06-post-training/",
+   "files": [],
+   "dirs": [
+    {
+     "path": "notes/06-post-training/rl/",
+     "files": [
+      "notes/06-post-training/rl/00-map.md",
+      "notes/06-post-training/rl/01-from-J-to-loss.md",
+      "notes/06-post-training/rl/02-importance-sampling-and-ratio.md",
+      "notes/06-post-training/rl/03-clip-and-min.md",
+      "notes/06-post-training/rl/04-advantage-critic-gae.md",
+      "notes/06-post-training/rl/05-ppo-engineering.md",
+      "notes/06-post-training/rl/06-grpo.md",
+      "notes/06-post-training/rl/07-kl.md",
+      "notes/06-post-training/rl/08-dapo.md",
+      "notes/06-post-training/rl/09-gspo.md",
+      "notes/06-post-training/rl/self-test.md"
+     ],
+     "dirs": []
+    }
+   ]
+  },
+  {
+   "path": "notes/07-vlm/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/08-eval-harness/",
+   "files": [],
+   "dirs": []
+  },
+  {
+   "path": "notes/code/",
+   "files": [],
+   "dirs": [
+    {
+     "path": "notes/code/01-python-pytorch/",
+     "files": [],
+     "dirs": []
+    },
+    {
+     "path": "notes/code/02-transformer-components/",
+     "files": [],
+     "dirs": []
+    },
+    {
+     "path": "notes/code/03-training-losses/",
+     "files": [],
+     "dirs": []
+    },
+    {
+     "path": "notes/code/04-distributed-code/",
+     "files": [],
+     "dirs": []
+    },
+    {
+     "path": "notes/code/05-debugging/",
+     "files": [],
+     "dirs": []
+    },
+    {
+     "path": "notes/code/06-frameworks/",
+     "files": [
+      "notes/code/06-frameworks/rl-framework-source-reading.md"
+     ],
+     "dirs": []
+    }
+   ]
+  }
+ ]
+}

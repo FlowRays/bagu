@@ -1,0 +1,166 @@
+基础知识，八股，代码，infra 能力还有训练经验细节
+学习思路：跟 gpt 交互学习 -> claude code 整理笔记复习记忆 -> 跟 gpt 口述 / 纸上手写验证
+
+- 首先把需要的知识整理分类一下：
+    - （1）基础知识，八股，经典论文 + 最新的模型架构，训练方法，技术报告
+    - （2）训练框架，infra，手撕代码
+    - 感觉这三个方面也已经差不多足够了，其他的可能是更加 project / direction specific 的
+- 接下来对第一个维度去整理分类：
+    - (1) llm arch：
+        - word -> embedding -> token (B, S, H) -> decoder block x N (pre-norm, attention, ffn) -> norm -> lm_head (B, -1, h) -> logits (B, V) -> softmax -> sampling -> next token prediction
+        - tokenizer / vocabulary
+            - bpe, bbpe, wordpiece, unigram
+                - bpe: 先按字符切分，然后统计相邻pair的频率，最高频的加入词表，直到满足词表大小
+                - bbpe: 由字符切分改为按 0-255 共 256 个 byte 切分，基于 utf-8 永远不会 oov，目前都用这个
+                - wordpiece: bert 用的，现在很少用，也是合并，选择联系最紧密的pair合并，规则类似于 score = freq(ab) / (freq(a) * freq(b))
+                - unigram: 从大词表开始删除，删除低价值token
+                - sentencepiece 是一个库
+            - encode and decode
+                - decode 简单，就是根据 token id 还原回去
+                - encode 涉及优先级，bbpe 按照生成词表的 merge rules 顺序来进行
+            - special tokens, chat template, jinja2
+            - tokenizer vocabulary size 影响 embedding, lm_head 参数量, logits memory, 关注 multilingual ability, compression ratio
+        - position encoding
+            - 可学习绝对位置编码，alibi, rope, partial rope, nope, ntk, yarn 外推，k3 无 pe
+                - rope: 按 token位置旋转 q,k，使 attn score 依赖相对位置
+            - 因为上下文扩大可能会遇到训练时没有见过的频率变化，所以需要一些外推方式
+                - NTK：通过调大 RoPE 的 base，让低频拉伸得更多、高频变化更小；YaRN：进一步按频率分段处理——低频强拉伸、高频尽量不动、中频平滑过渡，并加 attention scaling
+            - 最新的 kimi k3 已经没有 rope 了
+        - norm
+            - residual connection, residual stream
+            - pre-norm
+            - layernorm, rmsnorm, qk-norm
+                - layernorm: 对 hidden vector，减均值，除以标准差，加上两个 linear 参数，gamma 和 beta
+                    - 为什么不用 batchnorm：因为 llm 推理时 batch，seq 一直在变化，不适合，batchnorm 是跨样本比较同一个 feature，layernorm 是在一个样本内部比较所有 features
+                - rmsnorm: 除以均方根，乘以 gamma 参数
+            - no bias
+        - attention
+            - token 之间信息交换，获取 token 之间的关系
+            - causal mask
+            - mha, mqa, gqa, mla, gated deltanet, kda, dsa
+                - 优先学会 mla, gated deltanet, kda, dsa
+            - attn residual
+            - attention sink
+        - ffn
+            - 对每一个 token 做独立的非线性变换，基于 attention 从其他 token 获取的信息，在当前 token 内部做计算和特征转换
+            - gelu, swiglu
+            - moe
+            - MoE: 
+                - router, top-k routing
+                - expert, shared expert, routed expert
+                - auxiliary load balancing loss, aux-loss-free balancing
+                - expert parallel, token dispatch, capacity, expert collapse
+        - lm_head
+            - mtp
+            - tie word embedding / weight tying
+        - model architecture case studies
+            - qwen, llama, gemma, phi, kimi, dpsk, glm, minimax, stepfun, mimo, hunyuan, gpt-oss, seed-oss
+    - (2) inference and serving
+        - single turn inference
+            - prefill vs decode, compute-bound vs memory-bound
+            - kv cache
+            - TTFT, TPOT, throughput, latency
+            - sampling
+                - temperature, top-k, top-p, min-p, repetition penalty
+        - optimization
+            - flash attn
+            - vllm
+                - PagedAttention
+                - continuous batching
+                - prefix caching
+                - chunked prefill
+                - flashinfer
+            - sglang features
+            - KV cache quantization
+            - KV cache offloading
+        - serving
+            - speculative decoding
+            - quantization
+                - gptq, awq, fp8
+        - inference gpu memory
+    - (3) training fundamental
+        - LM objective, ntp, cross entropy, negative log likelihood, perplexity
+        - forward, backward: computational graph, autograd, gradient accumulation, micro batch
+        - optimizer: sgd, momentum, adam, adamw, weight decay, warmup, gradient clipping
+        - lr schedule
+        - batch / gradient accumulation
+        - numerical precision: mixed precision
+    - (4) distributed training and gpu infra
+        - gpu basics
+            - sm, cuda core, hbm, flops, gemm
+        - distributed parallelism
+            - dp, ddp, fsdp, zero, tp, pp, cp / sp, ep
+        - collective communication
+        - memory accounting
+            - params, gradients, optimizer states, activations, buffers
+            - logits memory: chunked / fused linear-CE
+        - activation checkpointing
+        - profiling / performance
+    - (5) pre-training
+        - data
+        - scaling
+        - training stability
+    - (6) post-training
+        - sft
+            - model distill
+            - data synthesis, cot
+            - agentic sft, loss
+            - packing, masking
+        - preference learning
+            - rm, rlhf
+            - dpo
+        - rl
+            - tradition / deep rl basics
+                - policy-gradient, actor-critic, self-play, meta-RL, MARL
+            - policy gradient
+                - reward, advantage, return, policy
+                - reinforce
+                - ppo
+                    - 
+                - grpo
+                - dapo, gspo
+            - agentic rl
+                - reward design
+                - credit assignment
+                - reward hacking
+                - multi-turn tool-use agentic rl
+                - rollout / train mismatch 训推不一致，精度
+        - opd
+    - (7) vlm
+        - arch taxonomy
+            - dual encoding: clip
+            - encoder + llm
+            - umm
+        - vision encoder
+            - inductive bias
+        - vision-language alignment
+        - mrope
+        - resolution
+        - multimodal training
+            - frozen training, training stage
+        - multimodal rl
+    - (8) eval and harness
+        - eval
+            - benchmark
+                - llm eval
+                - vlm eval
+                - agent eval
+            - setting
+        - harness
+            - react
+            - cc / codex / opencode / pi / openclaw / hermes
+- 针对第二个维度分类
+    - (1) python / pytorch
+        - numpy
+    - (2) transformer components
+    - (3) training losses
+    - (4) distributed code
+    - (5) debugging
+        - metric
+        - time
+        - famous bug
+        - OOM / NaN
+    - (6) framework familiarity
+        - sft: llama-factory
+        - rl: verl, slime
+        - Megatron-LM

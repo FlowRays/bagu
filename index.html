@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM/VLM 八股笔记</title>
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="assets/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<style>
+:root {
+  --bg: #faf9f5; --panel: #f0eee6; --text: #29261b; --muted: #73726c;
+  --accent: #c2410c; --border: #e3e1d7; --code-bg: #f4f3ec; --inline-code: rgba(0,0,0,.055);
+  --active-bg: rgba(194,65,12,.09);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #262624; --panel: #1f1e1b; --text: #e8e6df; --muted: #9a988f;
+    --accent: #e08b5d; --border: #3a3833; --code-bg: #1e1d1a; --inline-code: rgba(255,255,255,.09);
+    --active-bg: rgba(224,139,93,.14);
+  }
+}
+* { box-sizing: border-box; }
+html { height: 100%; }
+body {
+  margin: 0; height: 100%; display: flex; background: var(--bg); color: var(--text);
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+}
+#sidebar {
+  width: 235px; flex-shrink: 0; height: 100%; overflow-y: auto;
+  background: var(--panel); border-right: 1px solid var(--border); padding: 14px 10px 40px;
+}
+#sidebar h1 { font-size: 15px; margin: 4px 8px 14px; letter-spacing: .02em; }
+#sidebar h1 a { color: var(--text); text-decoration: none; }
+#sidebar details { margin-bottom: 2px; }
+#sidebar details details { margin-left: 12px; }
+#sidebar summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; padding: 5px 8px; border-radius: 6px;
+  list-style: none; user-select: none; color: var(--text);
+}
+#sidebar summary::before { content: "▸ "; color: var(--muted); font-size: 10px; }
+#sidebar details[open] > summary::before { content: "▾ "; }
+#sidebar summary:hover { background: var(--inline-code); }
+#sidebar .empty { font-size: 12px; color: var(--muted); padding: 2px 8px 4px 24px; font-style: italic; }
+#sidebar a.doc {
+  display: block; font-size: 13.5px; color: var(--muted); text-decoration: none;
+  padding: 4px 8px 4px 22px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#sidebar a.doc:hover { background: var(--inline-code); color: var(--text); }
+#sidebar a.doc.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
+#sidebar a.root { padding-left: 8px; font-weight: 600; color: var(--text); }
+#main { flex: 1; height: 100%; overflow-y: auto; }
+#content { max-width: 1150px; margin: 0 auto; padding: 28px 36px 100px; }
+#content .err { color: var(--muted); margin-top: 80px; text-align: center; }
+
+/* ---------- markdown 渲染 ---------- */
+.md { line-height: 1.62; word-wrap: break-word; }
+.md > :first-child { margin-top: 0; }
+.md h1, .md h2, .md h3, .md h4 { line-height: 1.3; margin: 1.25em 0 .45em; font-weight: 700; }
+.md h1 { font-size: 1.6em; }
+.md h2 { font-size: 1.32em; padding-bottom: .2em; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 1.12em; }
+.md h4 { font-size: 1em; }
+.md p { margin: .55em 0; }
+.md ul, .md ol { padding-left: 1.5em; margin: .4em 0; }
+.md li { margin: .18em 0; }
+.md li > p { margin: .18em 0; }
+.md blockquote {
+  margin: .7em 0; padding: .05em .9em; color: var(--muted);
+  border-left: 3px solid var(--accent); background: var(--inline-code); border-radius: 0 8px 8px 0;
+}
+.md hr { border: none; border-top: 1px solid var(--border); margin: 1.4em 0; }
+.md img { max-width: 100%; border-radius: 8px; }
+.md a { color: var(--accent); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+.md strong { font-weight: 700; }
+.md code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: .875em; background: var(--inline-code); padding: .15em .4em; border-radius: 5px;
+}
+.md pre {
+  position: relative; background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; overflow-x: auto; line-height: 1.55; margin: .7em 0;
+}
+.md pre code, .md pre code.hljs { background: transparent; padding: 0; font-size: 13px; }
+.md pre .copy {
+  position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted);
+  cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.md pre:hover .copy { opacity: 1; }
+.md pre .copy:hover { color: var(--accent); }
+.md .tw { overflow-x: auto; margin: .7em 0; }
+.md table { border-collapse: collapse; font-size: .9em; min-width: 50%; }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; }
+.md th { background: var(--panel); font-weight: 600; }
+.md input[type=checkbox] { margin-right: .4em; }
+.md .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.md .katex { font-size: 1.06em; }
+</style>
+</head>
+<body>
+<aside id="sidebar"><h1><a href="#bagu.md">📚 LLM/VLM 八股笔记</a></h1><div id="tree">加载目录…</div></aside>
+<main id="main"><article id="content" class="md"></article></main>
+<script src="assets/marked.min.js"></script>
+<script src="assets/highlight.min.js"></script>
+<script src="assets/katex/katex.min.js"></script>
+<script>
+const $content = document.getElementById('content');
+const $tree = document.getElementById('tree');
+
+/* ---- math: 先保护代码, 再抽出公式占位, 渲染后回填 katex ---- */
+function renderMarkdown(src) {
+  const codes = [], maths = [];
+  let s = src.replace(/```[\s\S]*?(?:```|$)|``[^`]*``|`[^`\n]*`/g,
+    m => `${codes.push(m) - 1}`);
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (m, t) => `${maths.push({ t, d: 1 }) - 1}`)
+       .replace(/\\\[([\s\S]+?)\\\]/g, (m, t) => `${maths.push({ t, d: 1 }) - 1}`)
+       .replace(/\\\(([\s\S]+?)\\\)/g, (m, t) => `${maths.push({ t, d: 0 }) - 1}`)
+       .replace(/\$(?!\s)([^$\n]*?[^\s$])\$/g, (m, t) => `${maths.push({ t, d: 0 }) - 1}`);
+  s = s.replace(/(\d+)/g, (m, i) => codes[+i]);
+  let html = marked.parse(s);
+  return html.replace(/(\d+)/g, (m, i) => {
+    const { t, d } = maths[+i];
+    try { return katex.renderToString(t, { displayMode: !!d, throwOnError: false }); }
+    catch (e) { return t; }
+  });
+}
+
+/* ---- 目录树来自 notes.json (由 tools/build_manifest.py 生成) ----
+   GitHub Pages 不提供目录列表, 所以清单必须是静态文件; 本地也走同一条路径。 */
+async function buildTree() {
+  const res = await fetch('notes.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`notes.json ${res.status}，请运行 python3 tools/build_manifest.py`);
+  return res.json();
+}
+const nameOf = p => decodeURIComponent(p.split('/').filter(Boolean).pop())
+  .replace(/\.md$/, '').replace(/^\d+-/, '');
+
+function renderNode(node) {
+  const det = document.createElement('details');
+  det.open = true;
+  const sum = document.createElement('summary');
+  sum.textContent = nameOf(node.path);
+  det.appendChild(sum);
+  for (const f of node.files) det.appendChild(docLink(f));
+  for (const d of node.dirs) det.appendChild(renderNode(d));
+  if (!node.files.length && !node.dirs.length) {
+    const e = document.createElement('div'); e.className = 'empty'; e.textContent = '(空)';
+    det.appendChild(e);
+  }
+  return det;
+}
+function docLink(path, cls = 'doc') {
+  const a = document.createElement('a');
+  a.className = cls; a.href = '#' + path; a.dataset.path = path;
+  a.textContent = nameOf(path);
+  return a;
+}
+
+/* github 风格 slug: 小写, 去标点, 空格转连字符, 保留中文 */
+const slug = s => s.trim().toLowerCase()
+  .replace(/[^\w一-鿿\- ]/g, '').replace(/ /g, '-');
+
+/* ---- 加载并渲染一篇笔记 ---- */
+async function load(path, anchor) {
+  path = decodeURIComponent(path);
+  let text;
+  try {
+    const res = await fetch(encodeURI(path), { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    text = await res.text();
+  } catch (e) {
+    $content.innerHTML = `<p class="err">无法加载 ${path} (${e.message})</p>`;
+    return;
+  }
+  $content.innerHTML = renderMarkdown(text);
+  document.title = nameOf(path) + ' · 八股笔记';
+  const base = path.slice(0, path.lastIndexOf('/') + 1);
+  $content.querySelectorAll('img').forEach(im => {
+    const s = im.getAttribute('src');
+    if (s && !/^([a-z]+:|\/|#)/i.test(s)) im.src = base + s;
+  });
+  $content.querySelectorAll('h1,h2,h3,h4').forEach(h => h.id = slug(h.textContent));
+  $content.querySelectorAll('a').forEach(a => {
+    const h = a.getAttribute('href') || '';
+    if (/^([a-z]+:|#)/i.test(h)) { if (/^[a-z]+:/i.test(h)) a.target = '_blank'; return; }
+    const i = h.indexOf('#'), frag = i < 0 ? '' : h.slice(i), href = i < 0 ? h : h.slice(0, i);
+    const t = href.startsWith('/') ? href.slice(1) : base + href;
+    if (t.toLowerCase().endsWith('.md')) a.href = '#' + t + frag; else a.href = t + frag;
+  });
+  $content.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+  $content.querySelectorAll('pre').forEach(pre => {
+    const b = document.createElement('button');
+    b.className = 'copy'; b.textContent = '复制';
+    b.onclick = async () => {
+      const code = pre.querySelector('code')?.innerText ?? pre.innerText;
+      try { await navigator.clipboard.writeText(code); }
+      catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = code; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+      }
+      b.textContent = '已复制'; setTimeout(() => b.textContent = '复制', 1200);
+    };
+    pre.appendChild(b);
+  });
+  $content.querySelectorAll('table').forEach(t => {
+    const w = document.createElement('div'); w.className = 'tw';
+    t.replaceWith(w); w.appendChild(t);
+  });
+  document.querySelectorAll('#sidebar a').forEach(a =>
+    a.classList.toggle('active', a.dataset.path === path));
+  const target = anchor && $content.querySelector('#' + CSS.escape(decodeURIComponent(anchor)));
+  if (target) target.scrollIntoView(); else document.getElementById('main').scrollTop = 0;
+}
+
+(async function init() {
+  marked.use({ gfm: true, mangle: false, headerIds: false });
+  try {
+    const tree = await buildTree();
+    $tree.innerHTML = '';
+    $tree.appendChild(docLink('bagu.md', 'doc root'));
+    for (const f of tree.files) $tree.appendChild(docLink(f));
+    for (const d of tree.dirs) $tree.appendChild(renderNode(d));
+  } catch (e) { $tree.textContent = '目录加载失败: ' + e; }
+  const go = () => {
+    const h = location.hash.slice(1) || 'bagu.md';
+    const i = h.indexOf('#');
+    load(i < 0 ? h : h.slice(0, i), i < 0 ? '' : h.slice(i + 1));
+  };
+  window.addEventListener('hashchange', go);
+  go();
+})().catch(e => { $tree.textContent = '初始化失败: ' + e; });
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# 框架源码克隆（39MB，源码导读只引用路径:行号，不入库）
+rl/framework/
+
+# 私密：含公司名/面试轮次的完整面经记录，不公开
+private/
+
+__pycache__/
+.DS_Store
+*.pyc
