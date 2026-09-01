@@ -21,9 +21,15 @@
   }
 }
 * { box-sizing: border-box; }
-html { height: 100%; }
+/* 只允许侧边栏和正文各自内部滚动，文档本身不滚动；
+   html 也涂背景色，避免橡皮筋回弹时露出白底。 */
+html {
+  height: 100%; overflow: hidden; background: var(--bg);
+  overscroll-behavior: none;
+}
 body {
-  margin: 0; height: 100%; display: flex; background: var(--bg); color: var(--text);
+  margin: 0; height: 100%; overflow: hidden; display: flex;
+  background: var(--bg); color: var(--text);
   font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   font-size: 15px;
 }
@@ -240,7 +246,7 @@ try { hideAnswers = localStorage.getItem('hideAnswers') === '1'; } catch (e) { /
 function applyAnswers() {
   document.body.classList.toggle('hide-answers', hideAnswers);
   $ans.classList.toggle('on', hideAnswers);
-  $ans.textContent = hideAnswers ? '🙈 答案已隐藏（点击显示）' : '👁 答案已显示（点击隐藏）';
+  $ans.textContent = hideAnswers ? '答案：已隐藏（点击显示）' : '答案：显示中（点击隐藏）';
 }
 $ans.addEventListener('click', () => {
   hideAnswers = !hideAnswers;

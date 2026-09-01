@@ -7,3 +7,6 @@ notes/interview.md
 __pycache__/
 .DS_Store
 *.pyc
+
+# 调试截图
+*.png
