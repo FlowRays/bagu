@@ -35,6 +35,21 @@
    "files": [],
    "dirs": [
     {
+     "path": "notes/06-post-training/distill/",
+     "files": [
+      "notes/06-post-training/distill/00-map.md",
+      "notes/06-post-training/distill/01-entropy-ce-kl-jsd.md",
+      "notes/06-post-training/distill/02-sft-and-kd.md",
+      "notes/06-post-training/distill/03-opd.md",
+      "notes/06-post-training/distill/04-reverse-kl-as-pg.md",
+      "notes/06-post-training/distill/05-kl-estimation.md",
+      "notes/06-post-training/distill/06-opsd.md",
+      "notes/06-post-training/distill/07-rethink-and-mopd.md",
+      "notes/06-post-training/distill/self-test.md"
+     ],
+     "dirs": []
+    },
+    {
      "path": "notes/06-post-training/rl/",
      "files": [
       "notes/06-post-training/rl/00-map.md",

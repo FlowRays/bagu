@@ -46,7 +46,7 @@ $$\boxed{r=\frac{\pi_\theta(a|s)}{\pi_{old}(a|s)}}$$
 
 $r$ 的读法：$r=1.5$ 表示当前 policy 给这个 action 的概率是原来的 1.5 倍；$r=1$ 表示没变。**刚 rollout 完那一刻 $\theta=\theta_{old}$，所以所有 $r=1$**，随着 SGD 才逐渐偏离 1。
 
-## 卡点 3：$A\log\pi \to Ar$ 不是代数替换
+## 卡点 3：A log pi 换成 A r 不是代数替换
 
 > **常见卡点**："为什么要把原先的 $A\log\pi$ 变成 $A r$？"
 
@@ -71,7 +71,7 @@ $$\boxed{\nabla r=r\nabla\log\pi_\theta}$$
 
 所以 $\nabla(rA)=Ar\nabla\log\pi$，当 $r=1$ 时就退化成 $A\nabla\log\pi$，和原始 policy gradient 完全一样。
 
-## 卡点 4（最关键）：为什么不是 $\mathbb E_{old}[rA\log\pi]$
+## 卡点 4（最关键）：为什么 surrogate 里没有 log pi
 
 > **常见卡点**："为什么 $L=\mathbb E[A\log\pi] \to L=\mathbb E_{old}[rA]$，而不是 $L=\mathbb E_{old}[rA\log\pi]$？"
 

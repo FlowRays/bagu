@@ -12,11 +12,25 @@
 - [x] **KL 散度**：定义与三性质、$\ge 0$ 的证明、forward vs reverse、mode-covering/seeking、免背记忆法
 - [x] **DAPO**：Clip-Higher、Dynamic Sampling、token-level loss 聚合、overlong reward shaping
 - [x] **GSPO**：sequence-level importance ratio（内容较薄，待深挖）
-- [ ] **OPD**（On-Policy Distillation）
-  - 已知线索：slime 有实现，`--use-opd` / `--opd-kl-coef`，做的是 **reverse KL 蒸馏**（把 student 对 teacher 的 reverse KL 当惩罚减进 advantage），与 advantage estimator 正交
-- [ ] **OPSD**
 
 自测题库：[rl/self-test.md](06-post-training/rl/self-test.md)（82 题）
+
+## 优先级 1b：蒸馏 / OPD / OPSD
+
+对应目录 [`06-post-training/distill/`](06-post-training/distill/00-map.md)
+
+- [x] **信息论地基**：熵 / 交叉熵 / KL / JSD，$H(q,p)=H(q)+D_{KL}(q\|p)$，$\partial L/\partial z=p-q$
+- [x] **SFT 与传统 KD**：teacher forcing、exposure bias、SFT 为什么是 forward KL、teacher 采样 ≈ MC forward KL
+- [x] **OPD**：on-policy 指 state distribution、四象限（prefix 来源 × KL 方向）、forward-KL OPD ≠ SFT
+- [x] **reverse KL = policy gradient**：梯度推导、$A_t=\log\pi_T-\log\pi_S$、KL-regularized RL ≡ sequence-level reverse KL
+- [x] **KL 估计粒度**：sampled-token / top-k / full-vocab，显存账、per-entry KL clipping
+- [x] **OPSD**：privileged information、GT-aware correction、teacher 固定 snapshot、主实验用 forward KL
+- [x] **Rethink OPD / MOPD**：distillability ≠ capability、Top-K overlap、cold start、多教师能力集成
+
+自测题库：[distill/self-test.md](06-post-training/distill/self-test.md)（53 题）
+
+待办：
+- [ ] slime 里 `--use-opd` / `--opd-kl-coef` 的实现和笔记里的公式逐条对照
 
 ## 优先级 2：VLM
 

@@ -120,7 +120,7 @@ $$\lambda\uparrow \Rightarrow \text{更相信真实长程 return} \Rightarrow \t
 
 经典默认：$\boxed{\gamma=0.99,\ \lambda=0.95}$。reward 很噪 / trajectory 很长可以降到 0.9；环境确定、critic 不可信可以升到 0.97~1.0。但实际上 lr、batch size、rollout length、clip range 通常比把 $\lambda$ 从 0.95 调到 0.97 更敏感。
 
-## 卡点 10：$V_{old}$ 是什么，为什么 target 叫 $\hat R$
+## 卡点 10：V_old 是什么，为什么 target 叫 R hat
 
 > **常见卡点**："为什么用 R，还有 V_old 又是什么？"
 
