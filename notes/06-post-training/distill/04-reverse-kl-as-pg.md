@@ -139,81 +139,167 @@ $$\boxed{\max_\pi\big\{\mathbb E_\pi[R]-\beta D_{KL}(\pi\|\pi_{\text{ref}})\big\
 
 OPD 相当于把这个隐式 teacher $\pi_R^*$ 换成一个**真实存在、而且能对每个 token 给 logprob** 的 $\pi_T$。这就是 "reverse KL 与 RL 有天然 synergy" 的准确含义。
 
-## 7. 卡点：SFT 的 loss 不用 PG，OPD 的 loss 要，差在哪
+## 7. 完整梯度推导：SFT 与 OPD 从 logits 一路推到底
 
-把两个 loss 写成**同一个形式**：
+第 2 节是在抽象的 $\nabla_\theta$ 层面推的。这一节推到**logits 层面**，把 SFT 和 OPD 并排放一起，就能看清"为什么一个要 PG 一个不要"这件事到底发生在哪一步。
 
-$$L=\sum_v \underbrace{w(v)}_{\text{权重}}\cdot \underbrace{f_\theta(v)}_{\text{被积函数}}$$
+约定：学生网络输出 logits $z\in\mathbb R^{|\mathcal V|}$，
 
-| | 权重 $w(v)$ | 被积函数 $f_\theta(v)$ |
-|---|---|---|
-| **SFT** | $\delta_{y^*}(v)$（one-hot 标签） | $-\log\pi_S(v)$ |
-| **Forward KL 蒸馏** | $\pi_T(v)$ | $-\log\pi_S(v)$ |
-| **Reverse KL（OPD）** | $\boxed{\pi_S(v)}$ | $\log\dfrac{\pi_S(v)}{\pi_T(v)}$ |
+$$\pi_S(v)=\frac{e^{z_v}}{\sum_u e^{z_u}},\qquad \pi_T(v)\ \text{固定，与}\ \theta\ \text{无关}$$
 
-$$\boxed{\text{唯一的结构差别：reverse KL 的权重里也有 }\theta}$$
+所有推导都对 $z_k$ 求偏导；最后统一乘 Jacobian 即可回到参数：$\nabla_\theta L=\left(\frac{\partial z}{\partial \theta}\right)^{\!\top}\nabla_z L$。
 
-### 链式法则有两项
+### 7.1 预备：softmax 的两个导数
 
-$$\nabla_\theta L=\underbrace{\sum_v \nabla_\theta w(v)\cdot f_\theta(v)}_{\text{(I) 权重在动}}\ +\ \underbrace{\sum_v w(v)\cdot\nabla_\theta f_\theta(v)}_{\text{(II) 被积函数在动}}$$
+**log-softmax 的导数**（最常用的那个）：
 
-**SFT / forward KL**：权重是标签或 teacher 分布，**与 $\theta$ 无关** $\Rightarrow$ 第 (I) 项**压根不存在**，只剩 (II)。
+$$\log\pi_S(v)=z_v-\log\sum_u e^{z_u}$$
 
-**Reverse KL**：两项都在。而且对 reverse KL 还有个特别的事实 ——
+$$\frac{\partial\log\pi_S(v)}{\partial z_k}=\delta_{vk}-\frac{e^{z_k}}{\sum_u e^{z_u}}=\boxed{\delta_{vk}-\pi_S(k)}$$
 
-$$\text{(II)}=\sum_v\pi_S(v)\nabla\log\frac{\pi_S(v)}{\pi_T(v)}=\sum_v\pi_S(v)\nabla\log\pi_S(v)=\nabla\sum_v\pi_S(v)=\nabla 1=0$$
+**softmax 本身的导数**，由上式乘 $\pi_S(v)$ 得到：
 
-$$\boxed{\text{reverse KL 的梯度信息\textbf{全部}在 (I) 里；SFT 的梯度信息全部在 (II) 里}}$$
+$$\frac{\partial\pi_S(v)}{\partial z_k}=\pi_S(v)\frac{\partial\log\pi_S(v)}{\partial z_k}=\boxed{\pi_S(v)\big(\delta_{vk}-\pi_S(k)\big)}$$
 
-实测（$V=5$，teacher 固定）：
+**一个贯穿全文的恒等式**（后面反复用）：
 
-| | (I) 权重项 | (II) 被积函数项 |
-|---|---|---|
-| Forward KL | `[0 0 0 0 0]`（不存在） | `[+0.5925 −0.1905 −0.5383 +0.1778 −0.0416]` |
-| Reverse KL | `[+0.7289 −0.3269 −0.0872 −0.1851 −0.1297]` | `[0 0 0 0 0]`（恒为 0） |
+$$\sum_v\pi_S(v)\big(\delta_{vk}-\pi_S(k)\big)=\pi_S(k)-\pi_S(k)\underbrace{\sum_v\pi_S(v)}_{=1}=0$$
 
-**两者的梯度来源恰好互换了。** 这就是全部答案的来源。
+即 $\mathbb E_{v\sim\pi_S}[\nabla\log\pi_S(v)]=0$。**score function 的期望为零**，这是后面所有事情的枢纽。
 
-### 采样把第 (I) 项弄丢了
+### 7.2 SFT 的梯度
 
-reverse KL 实际是采样估计的（只要 teacher 给采样 token 的一个标量 logprob，$[B,L]$ 而不是 $[B,L,V]$）。写成代码：
+$$L_{\text{SFT}}=-\log\pi_S(y^*)$$
 
-```python
-a = torch.multinomial(p, N)                # v_i 采出来只是一堆整数下标
-loss = (logp[a] - q.log()[a]).mean()       # 表达式里已经没有 π_S(v) 这个因子了
-```
+直接套 7.1 第一式，$v=y^*$：
 
-$$\boxed{\text{权重 }\pi_S\text{ 被「吸收」进了「哪些下标被抽中」这件事}}$$
+$$\frac{\partial L_{\text{SFT}}}{\partial z_k}=-\big(\delta_{y^*k}-\pi_S(k)\big)$$
 
-而下标 $v_i$ 在计算图里是**常数**。autograd 只看得见 $f_\theta(v_i)$，于是算出来的只有第 (II) 项 —— 而 (II) 恒等于 0。
+$$\boxed{\nabla_z L_{\text{SFT}}=\pi_S-e_{y^*}}$$
 
-实测：采样 + 天真 backprop 得到 `[+0.0000 −0.0000 +0.0000 +0.0001 −0.0001]`，**梯度全丢**。
+就是那个人人都背过的 **"预测分布减 one-hot"**。推导里**从头到尾没有出现过对权重求导这一步**，因为权重（one-hot 标签）是常数。
 
-$$\boxed{\text{“采样不可导”的准确含义：丢的不是采样这个操作，是「权重随 }\theta\text{ 变化」这一项}}$$
+### 7.3 Forward KL 蒸馏的梯度
 
-### PG 就是把第 (I) 项从样本里捞回来
+$$L_{\text{FKD}}=-\sum_v\pi_T(v)\log\pi_S(v)$$
 
-$\sum_v\nabla\pi_S(v)f(v)$ 没法直接用样本估，因为它是「梯度的加权和」而不是「某个分布下的期望」。log-derivative trick 把它改写成期望：
+（这是交叉熵；$D_{KL}(\pi_T\|\pi_S)=L_{\text{FKD}}-H(\pi_T)$ 只差一个与 $\theta$ 无关的常数，梯度相同。）
 
-$$\sum_v\nabla\pi_S(v)\,f(v)=\sum_v\pi_S(v)\,\nabla\log\pi_S(v)\,f(v)=\mathbb E_{v\sim\pi_S}\big[f(v)\,\nabla\log\pi_S(v)\big]$$
+$$\frac{\partial L_{\text{FKD}}}{\partial z_k}=-\sum_v\pi_T(v)\big(\delta_{vk}-\pi_S(k)\big)=-\pi_T(k)+\pi_S(k)\underbrace{\sum_v\pi_T(v)}_{=1}$$
 
-右边是 $\pi_S$ 下的期望，**可以用样本估**。这就是 policy gradient。
+$$\boxed{\nabla_z L_{\text{FKD}}=\pi_S-\pi_T}$$
 
-实测：采样 + PG 得到 `[+0.7289 −0.3269 −0.0874 −0.1850 −0.1296]`，和精确值差 $1.8\times10^{-4}$。
+SFT 是它在 $\pi_T=e_{y^*}$ 时的特例。同样地，$\pi_T$ 全程作为常数被拎出求和号，**从未被求导**。
 
-### 而 SFT / forward KL 采样时什么都不会丢
+### 7.4 Reverse KL（OPD）全词表的梯度
 
-$$-\sum_v\pi_T(v)\log\pi_S(v)=\mathbb E_{v\sim\pi_T}\big[-\log\pi_S(v)\big]$$
+记对数比
 
-从 $\pi_T$ 采样，**这个分布与 $\theta$ 无关**。本来就没有第 (I) 项，所以"吸收进采样"没有吸收掉任何东西，autograd 拿到的 (II) 就是完整梯度。
+$$r(v):=\log\frac{\pi_S(v)}{\pi_T(v)},\qquad L_{\text{RKL}}=\sum_v\pi_S(v)\,r(v)$$
 
-实测：forward KL 从 teacher 采样 + 直接 backprop，和全词表精确值差 $2.9\times10^{-4}$，**无偏**。
+注意 $r$ 里也含 $\theta$。乘法法则，两项都要留：
 
-SFT 是这里的极端情形：权重是 one-hot，求和只剩一项，直接就是 $-\log\pi_S(y^*)$。
+$$\frac{\partial L_{\text{RKL}}}{\partial z_k}=\underbrace{\sum_v\frac{\partial\pi_S(v)}{\partial z_k}\,r(v)}_{\text{(I) 权重在动}}+\underbrace{\sum_v\pi_S(v)\frac{\partial r(v)}{\partial z_k}}_{\text{(II) 被积函数在动}}$$
 
-### 旁证：连续动作里就不需要 PG
+**先算 (II)**。因为 $\pi_T$ 是常数，$\dfrac{\partial r(v)}{\partial z_k}=\dfrac{\partial\log\pi_S(v)}{\partial z_k}=\delta_{vk}-\pi_S(k)$，于是
 
-diffusion / flow policy 的动作连续，可以**重参数化**（$x=\mu_\theta+\sigma_\theta\epsilon$）：随机性被挪到与 $\theta$ 无关的 $\epsilon$ 上，权重对 $\theta$ 的依赖重新变成表达式里的显式可导路径，第 (I) 项又能被 autograd 看见。
+$$\text{(II)}=\sum_v\pi_S(v)\big(\delta_{vk}-\pi_S(k)\big)=0$$
+
+正是 7.1 的那个恒等式。**(II) 精确为零，不是近似。**
+
+**再算 (I)**。代入 softmax 导数：
+
+$$\text{(I)}=\sum_v\pi_S(v)\big(\delta_{vk}-\pi_S(k)\big)r(v)=\pi_S(k)r(k)-\pi_S(k)\sum_v\pi_S(v)r(v)$$
+
+而 $\sum_v\pi_S(v)r(v)=D_{KL}(\pi_S\|\pi_T)=L_{\text{RKL}}$ 本身。所以
+
+$$\boxed{\frac{\partial L_{\text{RKL}}}{\partial z_k}=\pi_S(k)\Big(\log\frac{\pi_S(k)}{\pi_T(k)}-D_{KL}(\pi_S\|\pi_T)\Big)}$$
+
+三件事值得注意：
+
+1. **梯度全部来自 (I)**，和 SFT / forward KL 恰好互换（那两个的梯度全部来自 (II)，因为它们的 (I) 压根不存在）。
+2. **括号里自动出现了一个 baseline** $-D_{KL}$，即"该 token 的对数比减去平均对数比"。这不是谁手工加的方差缩减项，是 softmax Jacobian 里的 $-\pi_S(k)\sum_v\pi_S(v)(\cdot)$ 自己长出来的。这正是 PG 里 advantage 的雏形（第 3 节讲的就是它）。
+3. **合法性自检**：$\sum_k\frac{\partial L}{\partial z_k}=\sum_k\pi_S(k)r(k)-D_{KL}\sum_k\pi_S(k)=0$。梯度与 $\mathbf 1$ 正交 —— 必须如此，因为所有 logits 同加一个常数不改变 softmax。$\nabla_z L_{\text{FKD}}=\pi_S-\pi_T$ 也满足（$1-1=0$）。
+
+**到这一步为止，全词表 reverse KL 是个普通的可导表达式，`.backward()` 就能算，不需要 PG。**
+
+### 7.5 采样之后：天真 backprop 得到的是零
+
+实践中词表枚举太贵（reverse KL 的卖点就是只要 teacher 给采样 token 的一个标量 logprob，$[B,L]$ 而不是 $[B,L,V]$）。于是把求和换成采样：$v_1,\dots,v_N\sim\pi_S$，
+
+$$\hat L=\frac1N\sum_{i=1}^N r(v_i)$$
+
+**这个 $\hat L$ 的值是无偏的**：$\mathbb E[\hat L]=\sum_v\pi_S(v)r(v)=L$。日志里打印出来的 loss 完全正确。
+
+但对它求导：$v_i$ 是采出来的整数下标，在计算图里是常数，autograd 只能沿 $r(v_i)=\log\pi_S(v_i)-\log\pi_T(v_i)$ 这条路走：
+
+$$\frac{\partial\hat L}{\partial z_k}=\frac1N\sum_i\frac{\partial\log\pi_S(v_i)}{\partial z_k}=\frac1N\sum_i\big(\delta_{v_ik}-\pi_S(k)\big)$$
+
+取期望：
+
+$$\mathbb E\left[\frac{\partial\hat L}{\partial z_k}\right]=\mathbb E_{v\sim\pi_S}[\delta_{vk}]-\pi_S(k)=\pi_S(k)-\pi_S(k)=0$$
+
+$$\boxed{\text{天真采样梯度是「零」的无偏估计 —— 它整个就是噪声}}$$
+
+对照 7.4 就知道发生了什么：把 $\sum_v\pi_S(v)(\cdot)$ 换成 $\frac1N\sum_i(\cdot)$ 之后，**权重 $\pi_S(v)$ 不再是表达式里的一个可导因子，而是被"哪些下标被抽中"这件事吸收掉了**。autograd 看不见它，于是只算出 (II)，而 (II) 恒等于 0。
+
+$$\boxed{\text{"采样不可导"丢的不是采样这个操作，是「权重随 }\theta\text{ 变化」这一整项}}$$
+
+值得记住的是这个 bug 的形态：**loss 数值正常，梯度接近零，模型不动。**
+
+### 7.6 PG：把丢掉的 (I) 变成可采样的期望
+
+问题在于 (I) $=\sum_v\nabla\pi_S(v)\,r(v)$ 是"梯度的加权和"，不是"某个分布下的期望"，没法直接用样本估。log-derivative（score function）恒等式
+
+$$\nabla\pi_S(v)=\pi_S(v)\,\nabla\log\pi_S(v)$$
+
+把它改写成 $\pi_S$ 下的期望：
+
+$$\nabla_\theta L_{\text{RKL}}=\underbrace{\mathbb E_{v\sim\pi_S}\big[r(v)\,\nabla\log\pi_S(v)\big]}_{\text{(I)}}+\underbrace{0}_{\text{(II)}}$$
+
+估计量（含任意常数 baseline $b$，因为 $\mathbb E[\nabla\log\pi_S]=0$ 所以不引入偏差）：
+
+$$\widehat{\nabla L}=\frac1N\sum_i\big(r(v_i)-b\big)\nabla\log\pi_S(v_i)$$
+
+**验证它确实收敛到 7.4 的闭式解**（取 $b=0$，对 $z_k$）：
+
+$$\mathbb E\left[r(v)\big(\delta_{vk}-\pi_S(k)\big)\right]=\pi_S(k)r(k)-\pi_S(k)\sum_v\pi_S(v)r(v)=\pi_S(k)\big(r(k)-D_{KL}\big)\ \checkmark$$
+
+和 $\boxed{\pi_S(k)(r(k)-D_{KL})}$ 完全一致。而且这里能看出 **$b=D_{KL}(\pi_S\|\pi_T)$ 是最自然的 baseline** —— 全词表版本免费自带它，采样版本得自己估（用 batch 内均值）。
+
+**写成代码的形式**：autograd 没法直接算 $\nabla\log\pi_S$ 加权和，所以构造一个 surrogate loss，让它的梯度恰好等于上式：
+
+$$\tilde L=\frac1N\sum_i \text{sg}\big[r(v_i)-b\big]\cdot\log\pi_S(v_i)$$
+
+$\text{sg}[\cdot]$ 是 stop-gradient（`.detach()`）。对 $\tilde L$ 调 `.backward()` 得到的就是 PG 估计量。**$\tilde L$ 的数值没有意义，只有它的梯度有意义** —— 这是所有 PG 实现里最容易看懵的一行。
+
+（注：也可以不 detach $r$，把 (II) 一并留在图里。因为 (II) 期望为零，这样做不引入偏差，只是多一项零均值噪声。两种写法都对。）
+
+### 7.7 序列级：OPD 就长成了 RL
+
+上面是单步。整条序列 $y=(y_1,\dots,y_T)$ 时，$\log\pi_S(y)=\sum_t\log\pi_S(y_t|y_{<t})$，逐 token 对数比记 $r_t=\log\dfrac{\pi_S(y_t|y_{<t})}{\pi_T(y_t|y_{<t})}$，则
+
+$$L=\mathbb E_{y\sim\pi_S}\Big[\sum_t r_t\Big],\qquad \nabla_\theta L=\mathbb E_{y\sim\pi_S}\Big[\Big(\sum_t r_t\Big)\nabla_\theta\log\pi_S(y)\Big]$$
+
+再用因果性（$t$ 时刻的动作影响不到 $t'<t$ 的 reward）把它拆成 reward-to-go 形式：
+
+$$\boxed{\nabla_\theta L=\mathbb E\left[\sum_t\nabla_\theta\log\pi_S(y_t|y_{<t})\Big(\sum_{t'\ge t}r_{t'}-b_t\Big)\right]}$$
+
+这就是标准 policy gradient，**reward 为 $-r_t$**（因为我们最小化 $L$）。到这一步 OPD 和 PPO/GRPO 的 trainer 已经可以共用（第 4 节）。
+
+### 7.8 并排小结
+
+| | 权重 $w(v)$ | 权重含 $\theta$？ | 梯度来自 | 采样时 |
+|---|---|---|---|---|
+| **SFT** | $e_{y^*}$ | 否 | (II)，$\nabla_z L=\pi_S-e_{y^*}$ | 从数据采，与 $\theta$ 无关，**无损** |
+| **Forward KL** | $\pi_T$ | 否 | (II)，$\nabla_z L=\pi_S-\pi_T$ | 从 $\pi_T$ 采，与 $\theta$ 无关，**无损** |
+| **Reverse KL** | $\pi_S$ | **是** | (I)，$\nabla_z L=\pi_S(k)(r(k)-D_{KL})$ | 从 $\pi_S$ 采，(I) 被吸收，**必须 PG** |
+
+$$\boxed{\text{分水岭是「}L=\sum_v w(v)f_\theta(v)\text{ 里的权重 }w\text{ 含不含 }\theta\text{」}}$$
+
+### 7.9 旁证：连续动作为什么不需要 PG
+
+diffusion / flow policy 的动作是连续的，可以**重参数化**：$x=\mu_\theta+\sigma_\theta\epsilon$，$\epsilon\sim\mathcal N(0,I)$。随机性被挪到与 $\theta$ 无关的 $\epsilon$ 上，$x$ 重新变成 $\theta$ 的可导函数，于是"权重随 $\theta$ 变"这件事重新回到表达式里的显式可导路径上，autograd 又能看见 (I) 了。
 
 $$\boxed{\text{离散 token 无法重参数化，才是 LLM 侧非 PG 不可的根本原因}}$$
 
