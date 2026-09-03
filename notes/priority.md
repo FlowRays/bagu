@@ -114,6 +114,13 @@
 - [x] [`05-pretraining/`](05-pretraining/00-map.md)：数据流水线与去重、scaling law 与 Chinchilla、训练稳定性与 muP
 - [x] [`08-eval-harness/`](08-eval-harness/00-map.md)：benchmark 与 setting、pass@k、污染、LLM-as-judge 偏置、ReAct 与编码智能体
 
+## 优先级 3e：代码维度补齐
+
+- [x] [`code/01-python-pytorch/`](code/01-python-pytorch/00-map.md) — 给 C++ 选手的 NumPy / PyTorch 速成
+- [x] [`code/02-transformer-components/`](code/02-transformer-components/00-map.md)、[`code/03-training-losses/`](code/03-training-losses/00-map.md) — 索引到手撕合集，不重复
+- [x] [`code/04-distributed-code/`](code/04-distributed-code/00-map.md) — collective 语义、死锁排查、checkpoint
+- [x] [`code/05-debugging/`](code/05-debugging/00-map.md) — OOM / NaN / 性能 / 结果不对 的排查顺序
+
 ## 优先级 3：框架代码
 
 对应目录 [`code/06-frameworks/`](code/06-frameworks/rl-framework-source-reading.md)

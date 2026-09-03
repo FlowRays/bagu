@@ -154,22 +154,31 @@
     },
     {
      "path": "notes/code/02-transformer-components/",
-     "files": [],
+     "files": [
+      "notes/code/02-transformer-components/00-map.md"
+     ],
      "dirs": []
     },
     {
      "path": "notes/code/03-training-losses/",
-     "files": [],
+     "files": [
+      "notes/code/03-training-losses/00-map.md"
+     ],
      "dirs": []
     },
     {
      "path": "notes/code/04-distributed-code/",
-     "files": [],
+     "files": [
+      "notes/code/04-distributed-code/00-map.md"
+     ],
      "dirs": []
     },
     {
      "path": "notes/code/05-debugging/",
-     "files": [],
+     "files": [
+      "notes/code/05-debugging/00-map.md",
+      "notes/code/05-debugging/01-oom-and-nan.md"
+     ],
      "dirs": []
     },
     {
