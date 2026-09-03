@@ -127,7 +127,7 @@ body.hide-answers .md blockquote.answer { display: none; }
 const $content = document.getElementById('content');
 const $tree = document.getElementById('tree');
 /* 只在本地存在的私密笔记(见 .gitignore); 线上取不到就不显示 */
-const PRIVATE = ['notes/interview.md'];
+const PRIVATE = ['notes/interview.md', 'notes/oj-sspoffer-48.md'];
 
 /* ---- math: 先保护代码, 再抽出公式占位, 渲染后回填 katex ---- */
 function renderMarkdown(src) {
