@@ -228,11 +228,16 @@
    "root": "embodied.md",
    "tree": {
     "path": "embodied/",
-    "files": [],
+    "files": [
+     "embodied/00-map.md"
+    ],
     "dirs": [
      {
       "path": "embodied/01-overview/",
-      "files": [],
+      "files": [
+       "embodied/01-overview/00-map.md",
+       "embodied/01-overview/01-paradigms.md"
+      ],
       "dirs": []
      },
      {
@@ -242,6 +247,63 @@
        "embodied/02-visual-generation/01-generative-models.md",
        "embodied/02-visual-generation/02-diffusion.md",
        "embodied/02-visual-generation/03-flow-matching.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/03-world-model/",
+      "files": [
+       "embodied/03-world-model/00-map.md",
+       "embodied/03-world-model/01-world-model-map.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/04-jepa/",
+      "files": [
+       "embodied/04-jepa/01-jepa.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/05-action/",
+      "files": [
+       "embodied/05-action/00-map.md",
+       "embodied/05-action/01-action-space.md",
+       "embodied/05-action/02-action-head.md",
+       "embodied/05-action/03-chunking-and-realtime.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/06-vla/",
+      "files": [
+       "embodied/06-vla/00-map.md",
+       "embodied/06-vla/01-vla-models.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/07-data-sim/",
+      "files": [
+       "embodied/07-data-sim/00-map.md",
+       "embodied/07-data-sim/01-data-and-sim2real.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/08-embodied-rl/",
+      "files": [
+       "embodied/08-embodied-rl/00-map.md",
+       "embodied/08-embodied-rl/01-embodied-rl.md"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "embodied/09-eval/",
+      "files": [
+       "embodied/09-eval/00-map.md",
+       "embodied/09-eval/01-eval.md"
       ],
       "dirs": []
      }

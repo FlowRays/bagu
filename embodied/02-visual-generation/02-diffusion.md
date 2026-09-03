@@ -30,7 +30,7 @@ $$\mu_\theta(x_t,t)=\frac{1}{\sqrt{\alpha_t}}\Big(x_t-\frac{\beta_t}{\sqrt{1-\ba
 
 完整的变分下界是一堆 KL 项，但代入上面的参数化并**丢掉与 $\theta$ 无关的加权系数**后，DDPM 的简化目标就是：
 
-$$\boxed{\mathcal L_{\text{simple}}=\mathbb E_{x_0,\ \epsilon\sim\mathcal N(0,I),\ t\sim\mathcal U[1,T]}\Big[\big\|\epsilon-\epsilon_\theta\big(\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon,\ t\big)\big\|^2\Big]$$
+$$\boxed{\mathcal L_{\text{simple}}=\mathbb E_{x_0,\ \epsilon\sim\mathcal N(0,I),\ t\sim\mathcal U[1,T]}\Big[\big\|\epsilon-\epsilon_\theta\big(\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon,\ t\big)\big\|^2\Big]}$$
 
 训练循环只有四行：
 
