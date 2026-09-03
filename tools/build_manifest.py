@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""扫描 notes/ 生成 notes.json 目录清单, 供 index.html 构建侧边栏.
+"""扫描各知识库目录, 生成 notes.json, 供 index.html 构建侧边栏.
+
+站点现在有三个知识库(base):
+  - llm      : notes/    + 大纲 bagu.md       (LLM/VLM 八股)
+  - embodied : embodied/ + 大纲 embodied.md   (VLA/WAM 具身八股)
+  - papers   : papers/   + 索引 papers.md     (按专题读论文的笔记)
 
 GitHub Pages 不提供目录列表, 所以目录树必须是静态文件.
 被 .gitignore 排除的笔记(本地私密版)不写进清单, 否则公开站点会出现 404 链接;
@@ -11,12 +16,17 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NOTES = ROOT / "notes"
+
+BASES = [
+    {"id": "llm",      "title": "LLM/VLM 八股笔记", "dir": "notes",    "root": "bagu.md"},
+    {"id": "embodied", "title": "VLA/WAM 八股笔记", "dir": "embodied", "root": "embodied.md"},
+    {"id": "papers",   "title": "论文笔记",         "dir": "papers",   "root": "papers.md"},
+]
 
 
-def ignored() -> set[str]:
+def ignored(d: Path) -> set[str]:
     """git 忽略的 .md 文件(相对 ROOT 的 posix 路径)."""
-    paths = [p.relative_to(ROOT).as_posix() for p in NOTES.rglob("*.md")]
+    paths = [p.relative_to(ROOT).as_posix() for p in d.rglob("*.md")]
     if not paths:
         return set()
     r = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT,
@@ -24,29 +34,37 @@ def ignored() -> set[str]:
     return set(r.stdout.split())
 
 
-SKIP: set[str] = set()
-
-
-def walk(d: Path) -> dict:
+def walk(d: Path, skip: set[str]) -> dict:
     rel = d.relative_to(ROOT).as_posix() + "/"
     files = sorted(p.relative_to(ROOT).as_posix() for p in d.glob("*.md")
-                   if p.relative_to(ROOT).as_posix() not in SKIP)
-    dirs = [walk(s) for s in sorted(d.iterdir())
+                   if p.relative_to(ROOT).as_posix() not in skip)
+    dirs = [walk(s, skip) for s in sorted(d.iterdir())
             if s.is_dir() and not s.name.startswith(".")]
     return {"path": rel, "files": files, "dirs": dirs}
 
 
-if __name__ == "__main__":
-    SKIP = ignored()
-    if SKIP:
-        print("跳过(git 忽略的本地私密笔记):", ", ".join(sorted(SKIP)))
-    tree = walk(NOTES)
-    out = ROOT / "notes.json"
-    out.write_text(json.dumps(tree, ensure_ascii=False, indent=1), encoding="utf-8")
-    n = 0
-    stack = [tree]
+def count(node: dict) -> int:
+    n, stack = 0, [node]
     while stack:
-        node = stack.pop()
-        n += len(node["files"])
-        stack += node["dirs"]
-    print(f"written: {out}  ({n} 篇笔记)")
+        cur = stack.pop()
+        n += len(cur["files"])
+        stack += cur["dirs"]
+    return n
+
+
+if __name__ == "__main__":
+    out = {"bases": []}
+    for b in BASES:
+        d = ROOT / b["dir"]
+        if not d.is_dir():
+            print(f"跳过(目录不存在): {b['dir']}/")
+            continue
+        skip = ignored(d)
+        if skip:
+            print(f"跳过(git 忽略的本地私密笔记): {', '.join(sorted(skip))}")
+        tree = walk(d, skip)
+        out["bases"].append({**{k: b[k] for k in ("id", "title", "root")}, "tree": tree})
+        print(f"  {b['id']:<9} {b['dir']}/  {count(tree)} 篇")
+    p = ROOT / "notes.json"
+    p.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"written: {p}  ({sum(count(x['tree']) for x in out['bases'])} 篇笔记)")

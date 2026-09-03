@@ -38,8 +38,18 @@ body {
   background: var(--panel); border-right: 1px solid var(--border); padding: 10px 8px 40px;
   line-height: 1.25;
 }
-#sidebar h1 { font-size: 14px; margin: 2px 6px 8px; letter-spacing: .02em; }
-#sidebar h1 a { color: var(--text); text-decoration: none; }
+#sidebar h1 { font-size: 14px; margin: 2px 4px 8px; letter-spacing: .02em; }
+#base-select {
+  width: 100%; font: inherit; font-size: 14px; font-weight: 700; color: var(--text);
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  padding: 3px 6px; cursor: pointer; appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 10px center, right 5px center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+#base-select:hover { border-color: var(--border); background-color: var(--inline-code); }
+#base-select option { font-weight: 600; color: var(--text); background: var(--panel); }
 #ans-toggle {
   display: block; width: calc(100% - 12px); margin: 0 6px 8px; padding: 4px 7px;
   font: inherit; font-size: 12px; text-align: left; cursor: pointer;
@@ -121,7 +131,7 @@ body.hide-answers .md blockquote.answer { display: none; }
 </style>
 </head>
 <body>
-<aside id="sidebar"><h1><a href="#bagu.md">📚 LLM/VLM 八股笔记</a></h1><button id="ans-toggle" type="button"></button><div id="tree">加载目录…</div></aside>
+<aside id="sidebar"><h1><select id="base-select" title="切换知识库"></select></h1><button id="ans-toggle" type="button"></button><div id="tree">加载目录…</div></aside>
 <main id="main"><article id="content" class="md"></article></main>
 <script src="assets/marked.min.js"></script>
 <script src="assets/highlight.min.js"></script>
@@ -152,10 +162,16 @@ function renderMarkdown(src) {
 
 /* ---- 目录树来自 notes.json (由 tools/build_manifest.py 生成) ----
    GitHub Pages 不提供目录列表, 所以清单必须是静态文件; 本地也走同一条路径。 */
-async function buildTree() {
+let BASES = [];                       /* 多知识库清单, 见 tools/build_manifest.py */
+async function loadManifest() {
   const res = await fetch('notes.json', { cache: 'no-store' });
   if (!res.ok) throw new Error(`notes.json ${res.status}，请运行 python3 tools/build_manifest.py`);
-  return res.json();
+  const m = await res.json();
+  return m.bases;
+}
+/* 一个文档属于哪个知识库: 按目录前缀或大纲文件名判断 */
+function baseOf(path) {
+  return BASES.find(b => path === b.root || path.startsWith(b.tree.path)) || BASES[0];
 }
 const nameOf = p => decodeURIComponent(p.split('/').filter(Boolean).pop())
   .replace(/\.md$/, '').replace(/^\d+-/, '');
@@ -264,25 +280,57 @@ $ans.addEventListener('click', () => {
   applyAnswers();
 });
 
+const $baseSel = document.getElementById('base-select');
+let curBase = null;
+
+/* 渲染某个知识库的目录树 */
+async function renderBase(base) {
+  curBase = base;
+  $baseSel.value = base.id;
+  $tree.innerHTML = '';
+  $tree.appendChild(docLink(base.root, 'doc root'));
+  for (const f of base.tree.files) $tree.appendChild(docLink(f));
+  /* 本地私密笔记: 被 .gitignore 排除, 只有本地存在; 线上 404 时自动跳过 */
+  for (const p of PRIVATE) {
+    if (!p.startsWith(base.tree.path)) continue;
+    try { if ((await fetch(p, { method: 'HEAD' })).ok) $tree.appendChild(docLink(p)); }
+    catch (e) { /* 不存在就不显示 */ }
+  }
+  for (const d of base.tree.dirs) $tree.appendChild(renderNode(d));
+  try { localStorage.setItem('base', base.id); } catch (e) { /* 隐私模式等 */ }
+}
+
 (async function init() {
   marked.use({ gfm: true, mangle: false, headerIds: false });
   applyAnswers();
   try {
-    const tree = await buildTree();
-    $tree.innerHTML = '';
-    $tree.appendChild(docLink('bagu.md', 'doc root'));
-    for (const f of tree.files) $tree.appendChild(docLink(f));
-    /* 本地私密笔记: 被 .gitignore 排除, 只有本地存在; 线上 404 时自动跳过 */
-    for (const p of PRIVATE) {
-      try { if ((await fetch(p, { method: 'HEAD' })).ok) $tree.appendChild(docLink(p)); }
-      catch (e) { /* 不存在就不显示 */ }
+    BASES = await loadManifest();
+    $baseSel.innerHTML = '';
+    for (const b of BASES) {
+      const o = document.createElement('option');
+      o.value = b.id; o.textContent = b.title;
+      $baseSel.appendChild(o);
     }
-    for (const d of tree.dirs) $tree.appendChild(renderNode(d));
+    /* 切换知识库时跳到它的大纲页 */
+    $baseSel.addEventListener('change', () => {
+      const b = BASES.find(x => x.id === $baseSel.value);
+      if (b) location.hash = b.root;
+    });
+    let saved = null;
+    try { saved = localStorage.getItem('base'); } catch (e) { /* 隐私模式等 */ }
+    /* 深链优先: hash 指向哪个库就先显示哪个 */
+    const h0 = location.hash.slice(1).split('#')[0];
+    const initial = (h0 && BASES.find(b => h0 === b.root || h0.startsWith(b.tree.path)))
+                 || BASES.find(b => b.id === saved) || BASES[0];
+    await renderBase(initial);
   } catch (e) { $tree.textContent = '目录加载失败: ' + e; }
-  const go = () => {
-    const h = location.hash.slice(1) || 'bagu.md';
+  const go = async () => {
+    const h = location.hash.slice(1) || (curBase ? curBase.root : 'bagu.md');
     const i = h.indexOf('#');
-    load(i < 0 ? h : h.slice(0, i), i < 0 ? '' : h.slice(i + 1));
+    const path = i < 0 ? h : h.slice(0, i);
+    const b = baseOf(path);
+    if (b && curBase && b.id !== curBase.id) await renderBase(b);   /* 深链跨库时自动切换 */
+    load(path, i < 0 ? '' : h.slice(i + 1));
   };
   window.addEventListener('hashchange', go);
   go();
