@@ -34,36 +34,39 @@ body {
   font-size: 15px;
 }
 #sidebar {
-  width: 235px; flex-shrink: 0; height: 100%; overflow-y: auto;
-  background: var(--panel); border-right: 1px solid var(--border); padding: 14px 10px 40px;
+  width: 218px; flex-shrink: 0; height: 100%; overflow-y: auto;
+  background: var(--panel); border-right: 1px solid var(--border); padding: 10px 8px 40px;
+  line-height: 1.25;
 }
-#sidebar h1 { font-size: 15px; margin: 4px 8px 10px; letter-spacing: .02em; }
+#sidebar h1 { font-size: 14px; margin: 2px 6px 8px; letter-spacing: .02em; }
 #sidebar h1 a { color: var(--text); text-decoration: none; }
 #ans-toggle {
-  display: block; width: calc(100% - 16px); margin: 0 8px 12px; padding: 5px 8px;
-  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+  display: block; width: calc(100% - 12px); margin: 0 6px 8px; padding: 4px 7px;
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
   color: var(--muted); background: transparent;
   border: 1px solid var(--border); border-radius: 6px;
 }
 #ans-toggle:hover { color: var(--accent); border-color: var(--accent); }
 #ans-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--active-bg); }
-#sidebar details { margin-bottom: 2px; }
-#sidebar details details { margin-left: 12px; }
+#sidebar details { margin-bottom: 0; }
+#sidebar details details { margin-left: 9px; }
 #sidebar summary {
-  cursor: pointer; font-size: 13px; font-weight: 600; padding: 5px 8px; border-radius: 6px;
+  cursor: pointer; font-size: 12.5px; font-weight: 600; padding: 2px 6px; border-radius: 5px;
   list-style: none; user-select: none; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-#sidebar summary::before { content: "▸ "; color: var(--muted); font-size: 10px; }
+#sidebar summary::marker, #sidebar summary::-webkit-details-marker { display: none; }
+#sidebar summary::before { content: "▸ "; color: var(--muted); font-size: 9px; }
 #sidebar details[open] > summary::before { content: "▾ "; }
 #sidebar summary:hover { background: var(--inline-code); }
-#sidebar .empty { font-size: 12px; color: var(--muted); padding: 2px 8px 4px 24px; font-style: italic; }
+#sidebar .empty { font-size: 11.5px; color: var(--muted); padding: 1px 6px 2px 18px; font-style: italic; }
 #sidebar a.doc {
-  display: block; font-size: 13.5px; color: var(--muted); text-decoration: none;
-  padding: 4px 8px 4px 22px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: block; font-size: 12.5px; color: var(--muted); text-decoration: none;
+  padding: 2px 6px 2px 17px; border-radius: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #sidebar a.doc:hover { background: var(--inline-code); color: var(--text); }
 #sidebar a.doc.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
-#sidebar a.root { padding-left: 8px; font-weight: 600; color: var(--text); }
+#sidebar a.root { padding-left: 6px; font-weight: 600; color: var(--text); }
 #main { flex: 1; height: 100%; overflow-y: auto; }
 #content { max-width: 1150px; margin: 0 auto; padding: 28px 36px 100px; }
 #content .err { color: var(--muted); margin-top: 80px; text-align: center; }
@@ -159,7 +162,7 @@ const nameOf = p => decodeURIComponent(p.split('/').filter(Boolean).pop())
 
 function renderNode(node) {
   const det = document.createElement('details');
-  det.open = true;
+  det.open = false;                     /* 默认折叠，只展开当前文档所在的那条路径 */
   const sum = document.createElement('summary');
   sum.textContent = nameOf(node.path);
   det.appendChild(sum);
@@ -235,6 +238,13 @@ async function load(path, anchor) {
   });
   document.querySelectorAll('#sidebar a').forEach(a =>
     a.classList.toggle('active', a.dataset.path === path));
+  /* 展开当前文档所在的目录链，并滚到可见处 */
+  const cur = document.querySelector('#sidebar a.doc.active');
+  if (cur) {
+    for (let d = cur.closest('details'); d; d = d.parentElement.closest('details')) d.open = true;
+    if (cur.scrollIntoViewIfNeeded) cur.scrollIntoViewIfNeeded();
+    else cur.scrollIntoView({ block: 'nearest' });
+  }
   const target = anchor && $content.querySelector('#' + CSS.escape(decodeURIComponent(anchor)));
   if (target) target.scrollIntoView(); else document.getElementById('main').scrollTop = 0;
 }

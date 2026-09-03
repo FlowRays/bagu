@@ -185,10 +185,44 @@ $$V \rightarrow \delta \rightarrow \text{GAE} \rightarrow A \rightarrow \text{PP
 
 ## 自测
 
-1. 为什么不能直接拿 $G_t$ 当 advantage？baseline 解决了什么？
-2. critic 学的目标是什么？真实值不知道，用什么当 target？为什么 noisy target 也能训出来？
-3. 用自己的话解释 bias 和 variance，说明它们描述的是**估计器**而不是单个样本。
-4. **纸上推导**：$\lambda=1$ 时 GAE 如何 telescope 成 $G_t-V_t$。
-5. $V_{old}$ 和 $V_\phi$ 有什么区别？为什么算 GAE 必须用 $V_{old}$？
-6. $\hat R$、$G_t$、$r_t$ 三者的区别？为什么 $\hat R=\hat A+V_{old}$？
-7. $\lambda=0$ 和 $\lambda=1$ 时 critic target 分别退化成什么？
+**1.** 为什么不能直接拿 $G_t$ 当 advantage？baseline 解决了什么？
+
+> **答：** $G_t$ 的绝对值受任务量纲影响、方差极大：$G_t=100$ 可能只是平均水平，$G_t=20$ 可能已经很优秀。直接用会让梯度被量纲主导。
+> baseline（$V(s_t)$）把它变成**相对好坏**：$A=G_t-V(s_t)$。减去一个只依赖状态、不依赖 action 的量**不引入偏差**（期望不变），却能显著**降低方差**。
+
+**2.** critic 学的目标是什么？真实值不知道，用什么当 target？为什么 noisy target 也能训出来？
+
+> **答：** critic 学的是 $V(s)=\mathbb E[G_t\mid s_t=s]$，即在状态 $s$ 下未来回报的**期望**。
+> 真实期望不知道，就用**实际采样到的回报** $\hat R_t$ 当 target 做回归（$\min(V_\phi(s_t)-\hat R_t)^2$）。
+> noisy target 也能训出来，是因为回归的最优解恰好是**条件期望** —— 只要 target 是无偏样本，大量样本平均后 critic 收敛到期望值。这就是它本质上是个监督回归器。
+
+**3.** 用自己的话解释 bias 和 variance，说明它们描述的是**估计器**而不是单个样本。
+
+> **答：** 把估计器重复运行很多次，得到一堆估计值：
+> **bias** = 这堆值的平均 与 真值 的差（系统性偏离）；**variance** = 这堆值彼此之间的离散程度。
+> 单个样本谈不上偏差方差 —— 它们是**估计器这个过程**的统计性质。GAE 的 $\lambda$ 正是在这两者之间调节。
+
+**4.** **纸上推导**：$\lambda=1$ 时 GAE 如何 telescope 成 $G_t-V_t$。
+
+> **答：** $\hat A_t^{GAE(\gamma,1)}=\sum_{l\ge0}\gamma^l\delta_{t+l}$，其中 $\delta_{t+l}=r_{t+l}+\gamma V_{t+l+1}-V_{t+l}$。
+> 展开：
+> $$(r_t+\gamma V_{t+1}-V_t)+\gamma(r_{t+1}+\gamma V_{t+2}-V_{t+1})+\gamma^2(\cdots)$$
+> $\gamma V_{t+1}$ 和 $-\gamma V_{t+1}$ 抵消、$\gamma^2V_{t+2}$ 和 $-\gamma^2V_{t+2}$ 抵消……中间项全部**telescope 掉**，只剩
+> $$r_t+\gamma r_{t+1}+\gamma^2r_{t+2}+\cdots-V_t=G_t-V_t$$
+> 即退化成纯 Monte Carlo：**低偏差、高方差**。$\lambda=0$ 则只剩 $\delta_t$，是纯 TD：高偏差、低方差。
+
+**5.** $V_{old}$ 和 $V_\phi$ 有什么区别？为什么算 GAE 必须用 $V_{old}$？
+
+> **答：** $V_{\text{old}}$ 是 **rollout 时那份 critic 的输出快照**，已经存下来了；$V_\phi$ 是**当前正在被更新**的 critic。
+> 算 GAE 必须用 $V_{\text{old}}$，因为 advantage 是针对这批固定数据算好的常量（要 stop-gradient）。如果用不断变化的 $V_\phi$，advantage 会在同一批数据的多次 epoch 中漂移，训练目标就不稳定了。
+
+**6.** $\hat R$、$G_t$、$r_t$ 三者的区别？为什么 $\hat R=\hat A+V_{old}$？
+
+> **答：** $r_t$ 是**单步即时奖励**；$G_t$ 是从 $t$ 开始的**折扣回报**（纯 MC）；$\hat R$ 是给 critic 回归用的 **target（return）**。
+> $\hat R=\hat A+V_{\text{old}}$ 是因为 $\hat A$ 本身就是「相对 $V_{\text{old}}$ 好多少」，把基准加回去就还原成了对回报的估计。这样做的好处是 target 和 GAE 用的是同一套 $\lambda$ 折中，比直接用 $G_t$ 方差更小。
+
+**7.** $\lambda=0$ 和 $\lambda=1$ 时 critic target 分别退化成什么？
+
+> **答：** $\lambda=0$：$\hat A=\delta_t$，$\hat R=\delta_t+V_t=r_t+\gamma V_{t+1}$ —— 就是 **TD(0) target**（一步 bootstrap）。
+> $\lambda=1$：$\hat A=G_t-V_t$，$\hat R=G_t$ —— 就是 **Monte Carlo target**（完整回报）。
+

@@ -177,10 +177,46 @@ $$\boxed{\text{不能直接拿 ViT 参数规模和 LLM 参数规模比较}}$$
 
 ## 自测（口述版）
 
-1. 写出 CLIP 和 SigLIP 的 loss，说明换成 sigmoid 解决了什么问题。SigLIP2 还加了什么？
-2. 写出 DINO 的 loss 和 teacher 更新方式。它为什么能学到 CLIP 学不到的东西？怎么防 collapse？
-3. Qwen3-VL-8B 的 vision config 是什么？DeepStack 是什么、加在哪、为什么？
-4. Qwen3.5-9B 的 vision tower 和 Qwen3-VL 差在哪？
-5. Kimi K3 为什么敢不用 SigLIP 初始化？背后的 objective mismatch 是什么？
-6. 为什么 projector 会有 40M 参数？用 Qwen 的 $2\times2$ merge 算一遍。
-7. 有人 scale 过 vision encoder 吗？为什么 6B ViT 没成标配？说出至少三个原因。
+**1.** 写出 CLIP 和 SigLIP 的 loss，说明换成 sigmoid 解决了什么问题。SigLIP2 还加了什么？
+
+> **答：** CLIP 是 batch 内 softmax contrastive：$L_i=-\log\frac{\exp(s(I_i,T_i)/\tau)}{\sum_j\exp(s(I_i,T_j)/\tau)}$，正确 caption 要和整个 batch 竞争，因此依赖大 batch、batch 内 negative、多卡 all-gather。
+> SigLIP 改成 sigmoid pairwise 二分类：$L=-\sum_{ij}\log\sigma(y_{ij}(s_{ij}+b))$，$y_{ij}=+1$ 若 $i=j$ 否则 $-1$，**不再需要 softmax over whole batch**，扩展性和 batch size 灵活性更好。
+> SigLIP2 还加了：captioning-based pretraining、self-distillation、masked prediction、online data curation、localization/dense prediction 优化、native aspect ratio / 多分辨率、multilingual。
+
+**2.** 写出 DINO 的 loss 和 teacher 更新方式。它为什么能学到 CLIP 学不到的东西？怎么防 collapse？
+
+> **答：** 两个不同 augmentation 分别给 student 和 teacher：$\mathcal L=-\sum_k p_t(k)\log p_s(k)$。teacher **不反向传播**，是 student 的 EMA：$\theta_t\leftarrow m\theta_t+(1-m)\theta_s$。用 sharpening 和 centering 防止 $p_s=p_t=\text{const}$ 的 representation collapse。
+> 能学到不同的东西是因为：caption「A red cup on a table.」根本没告诉模型杯子具体在哪、桌子边界、窗户、每个 patch 属于什么、depth、object part，所以 image-text supervision 偏 **global semantics**；DINO 从图像本身学，因此擅长 patch-level representation、local correspondence、segmentation、depth、geometry、dense perception。
+
+**3.** Qwen3-VL-8B 的 vision config 是什么？DeepStack 是什么、加在哪、为什么？
+
+> **答：** **SigLIP-2 架构**，从官方 pretrained checkpoint 初始化后做 dynamic-resolution 继续训练（8B 用 SigLIP2-So400m）。配置：27 层、hidden 1152、MLP 4304（普通 GELU 不是 SwiGLU）、16 heads、patch 16×16、temporal patch 2、spatial merge 2×2、输出 4096。
+> **DeepStack**：不只用 ViT 最后一层，而是在第 **8/16/24** 层各取一次 feature、各配一个 merger，然后**加到 LLM 前几层的 hidden state 上**（$h_l\leftarrow h_l+h^{\text{vision}}_l$）。目的是让 intermediate ViT 的 texture / OCR / local / spatial feature 不必等到最后一层全变成高度 semantic 的表示才交给 LLM，官方说法是提升 fine-grained detail 与 image-text alignment。
+
+**4.** Qwen3.5-9B 的 vision tower 和 Qwen3-VL 差在哪？
+
+> **答：** core ViT 配置**完全一致**（27L / 1152 / 4304 / 16 heads / patch 16 / merge 2），但当前 checkpoint `deepstack_visual_indexes = []`，**没有 DeepStack**，所以 visual module 从 ~576M 降到 ~456M。
+> 而且它已经不叫 Qwen3.5-VL —— 官方定位是「Causal Language Model with Vision Encoder」，是从头在 interleaved text/image/video token 上训练的 **native multimodal foundation model**。
+
+**5.** Kimi K3 为什么敢不用 SigLIP 初始化？背后的 objective mismatch 是什么？
+
+> **答：** 因为当 multimodal pretraining 足够大时，**next-token prediction 本身就可以成为 vision encoder 的 supervision** —— $\mathcal L=-\sum_t\log p(y_t|I,y_{<t})$ 的梯度会一路传到 ViT。
+> **objective mismatch**：SigLIP 优化的是 image-text embedding similarity，而 VLM 最终优化的是 $p(\text{text}|\text{image},\text{context})$，两者**不完全一致**（$L_{\text{contrastive}}\ne L_{\text{VLM}}$）。
+> Kimi 报告 SigLIP 初始化版本在联合训练里 gradient norm 更高、spike 更多，from-scratch MoonViT-V2（401M、27L、hidden 1024、FFN 4096、12 heads、patch 14、RMSNorm、无 bias）更稳定且最终追平。
+
+**6.** 为什么 projector 会有 40M 参数？用 Qwen 的 $2\times2$ merge 算一遍。
+
+> **答：** 因为 $2\times2$ merge 要先 concat：$4\times1152=4608$，然后 $4608\to4608\to4096$：
+> $$4608^2+4608\times4096\approx21.2\text{M}+18.9\text{M}=\mathbf{40.1M}$$
+> Kimi K3 是 $4\times1024=4096\to4096\to7168\approx16.8+29.4=46.1$M。「projector 就是个小 MLP」是误解。
+
+**7.** 有人 scale 过 vision encoder 吗？为什么 6B ViT 没成标配？说出至少三个原因。
+
+> **答：** **有**：InternVL 的核心卖点就是 Scaling up Vision Foundation Models，做了 **InternViT-6B**；DINOv2 1.1B、DINOv3 7B。
+> 没成标配的原因：
+> ① **瓶颈往往首先是 resolution 不是参数量** —— OCR 里小字号 resize 后直接消失，$400M\to40B$ 也救不回来，所以算力先花在 dynamic resolution / AnyRes / tiling / multi-scale / DeepStack；
+> ② **ViT compute 随 visual token 爆炸**（$O(N_v^2d)$，$N_v$ 从 1000 到 10000 是 100×），存在「更大 ViT vs 更高分辨率」的预算竞争；
+> ③ **information bottleneck**：10000 个 feature 压成 1000 token 再给 LLM，继续增大 VE 未必等比例提升；
+> ④ 很多 benchmark 的最终瓶颈是 **LLM reasoning**，$\text{LLM }8B\to70B$ 通常更值；
+> ⑤ **400M 的 ViT 一点都不弱** —— 它只负责 $I\to\text{representation}$，不负责生成、世界知识、long CoT、instruction following，**不能直接拿 ViT 参数规模和 LLM 比**。
+

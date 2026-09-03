@@ -158,9 +158,37 @@ $$A_t=\operatorname{sg}\big[\log q_t(\hat y_t)-\log p_t(\hat y_t)\big],\qquad L_
 
 ## 自测（口述版）
 
-1. 证明 sampled-token estimator 是 KL 的无偏估计。
-2. 用 $p_S=\{A:0.4,B:0.3\}$、$p_T=\{A:0.1,B:0.6\}$ 说明 sampled-token 的稀疏性问题。
-3. 估算 $T=2048,V=150\text{K}$、bf16 时 full-vocab logits 的显存，说清楚痛点是 FLOPs 还是显存/带宽。
-4. Top-k KL 为什么必须重新归一化？归一化到什么？
-5. per-entry KL clipping 和 top-k 有什么本质区别？OPSD 为什么需要它？
-6. "loss 的 MC estimator" 和 "policy gradient 的估计量" 差在哪？为什么不能直接对采样 token 做 CE backprop？
+**1.** 证明 sampled-token estimator 是 KL 的无偏估计。
+
+> **答：** 从 student 采一个 token $\hat y_t\sim p_t$，只算 $\ell_t=\log p_t(\hat y_t)-\log q_t(\hat y_t)$。取期望：
+> $$\mathbb E_{\hat y_t\sim p_t}\big[\log p_t(\hat y_t)-\log q_t(\hat y_t)\big]=\sum_v p_t(v)\log\frac{p_t(v)}{q_t(v)}=D_{KL}(p_t\|q_t)$$
+> 所以它是 KL 的**单样本无偏估计**。
+
+**2.** 用 $p_S=\{A:0.4,B:0.3\}$、$p_T=\{A:0.1,B:0.6\}$ 说明 sampled-token 的稀疏性问题。
+
+> **答：** teacher 真正想说的是「**A 太高了，B 太低了，把概率从 A 搬到 B**」。
+> 但如果这一次恰好采到 $\hat y_t=A$，估计量只看到 $\log0.4-\log0.1$，于是这一步只知道「A 该压」，**完全没看到 B 该升**；要等下次采到 B 才知道。
+> 所以它期望正确但**方差大、监督稀疏** —— 和 REINFORCE 是同一个味道。
+
+**3.** 估算 $T=2048,V=150\text{K}$、bf16 时 full-vocab logits 的显存，说清楚痛点是 FLOPs 还是显存/带宽。
+
+> **答：** $2048\times150000\times2\ \text{B}\approx614$ MB 一份，teacher + student 约 **1.2 GB/sample**；$T=16$K 时约 4.8 GB。
+> **痛点主要是显存和带宽**，不是 FLOPs：正常 LM 训练算 CE 本来就要过 $h_tW_{\text{vocab}}$ 产生完整 logits。full-vocab 蒸馏多出来的是 teacher 的额外一次 forward、两边完整 logits、整个 $V$ 上的 softmax+KL、以及为 backward 保留的中间量。
+
+**4.** Top-k KL 为什么必须重新归一化？归一化到什么？
+
+> **答：** 因为截断后 $\sum_{v\in S_t}p(v)<1$，不再是一个概率分布，直接算 KL 没有意义。
+> 两边都要归一化到 **top-k 子集内部的条件分布**：$\bar p(v)=\frac{p(v)}{\sum_{u\in S_t}p(u)}$、$\bar q$ 同理，再算 $D_{KL}(\bar p\|\bar q)$。
+> 含义：不要求 student 学 teacher 的整个词表分布，只要求它**在「自己真正在考虑的几个候选」之间学会像 teacher 一样排序和分配概率**。
+
+**5.** per-entry KL clipping 和 top-k 有什么本质区别？OPSD 为什么需要它？
+
+> **答：** **clipping 是 $\sum_v\min(\ell_{t,v},\tau)$，仍然遍历整个 vocab**，只限制单项的贡献上限；**top-k 则根本不看其余 token**。
+> OPSD 需要它是因为 `wait / therefore / however / think` 这类 **style token 的 KL 特别大**，会把真正的数学 reasoning token 的梯度淹掉。
+> 注意论文附录里的 `Top-k = -1` 是**生成时 sampling 的参数**，不是说 KL 用了 top-k。
+
+**6.** "loss 的 MC estimator" 和 "policy gradient 的估计量" 差在哪？为什么不能直接对采样 token 做 CE backprop？
+
+> **答：** 前者 $\ell_t=\log p_t(\hat y_t)-\log q_t(\hat y_t)$ 是 KL **数值**的无偏估计；后者是 $A_t=\operatorname{sg}[\log q_t-\log p_t]$、$L_{\text{PG}}=-A_t\log p_\theta(\hat y_t)$，是为了得到**正确的梯度**。
+> 不能直接对采样 token 做普通 CE backprop，因为 $\hat y_t\sim p_\theta$ 这个 **sampling 操作本身不可导**，而且 $\theta$ 同时出现在期望的分布里和被积函数里。必须走 score-function（log-derivative）路线，且 $A_t$ 上要 stop-gradient。
+

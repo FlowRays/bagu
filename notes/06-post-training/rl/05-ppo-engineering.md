@@ -177,10 +177,40 @@ actor / critic / reference / reward 可能是四个不同的模型 —— 这正
 
 ## 自测
 
-1. 默写完整 PPO loss 三项，说明各自作用和符号方向。
-2. 按时间顺序说出一次 PPO iteration 的步骤，指出哪些量在什么时候被冻结。
-3. 为什么用 `exp(log_prob - old_log_prob)` 而不是直接相除？
-4. rollout batch 和 SGD minibatch 的区别？`ppo_epochs=4` 是什么意思？
-5. clipfrac 很高说明什么？可能的原因有哪些？
-6. $\pi_{old}$ 和 $\pi_{ref}$ 有什么区别？
-7. LLM 里 $s_t$、$a_t$ 分别是什么？reward 在什么时候给？
+**1.** 默写完整 PPO loss 三项，说明各自作用和符号方向。
+
+> **答：** $$L=\underbrace{-\mathbb E\big[\min(r_tA_t,\ \text{clip}(r_t,1-\epsilon,1+\epsilon)A_t)\big]}_{\text{policy loss，要最小化所以取负}}+\underbrace{c_1\,\mathbb E\big[(V_\phi(s_t)-\hat R_t)^2\big]}_{\text{value loss，正号}}-\underbrace{c_2\,\mathbb E[\mathcal H(\pi_\theta)]}_{\text{entropy bonus，负号=鼓励探索}}$$
+>  policy 项要最大化 surrogate 所以前面加负号；value 项是回归误差直接最小化；entropy 项要**最大化**熵所以减去它。
+
+**2.** 按时间顺序说出一次 PPO iteration 的步骤，指出哪些量在什么时候被冻结。
+
+> **答：** ① 用 $\pi_{\theta}$ rollout 采数据，**同时记录 $\log\pi_{\text{old}}$ 和 $V_{\text{old}}$**（此刻冻结）；
+> ② 算 reward、用 $V_{\text{old}}$ 算 GAE 得到 $\hat A$，再算 $\hat R=\hat A+V_{\text{old}}$（$\hat A,\hat R$ 此后是常量，stop-gradient）；
+> ③ 把这批数据切成 minibatch，跑 `ppo_epochs` 轮：每次算当前 $\log\pi_\theta$、$r=\exp(\log\pi_\theta-\log\pi_{\text{old}})$、loss、backward、step；
+> ④ 丢弃这批数据，回到 ①。
+
+**3.** 为什么用 `exp(log_prob - old_log_prob)` 而不是直接相除？
+
+> **答：** 概率本身可能极小（长序列上是很多个小数连乘），直接相除会**下溢**成 0/0。
+> 模型输出的本来就是 log prob，用 $\exp(\log\pi_\theta-\log\pi_{\text{old}})$ 在对数域做减法再取指数，数值稳定得多，也少一次 log 运算。
+
+**4.** rollout batch 和 SGD minibatch 的区别？`ppo_epochs=4` 是什么意思？
+
+> **答：** **rollout batch** 是一次采样收集到的全部数据（决定 $\pi_{\text{old}}$ 是谁）；**SGD minibatch** 是从中切出来做一次参数更新的小块。
+> `ppo_epochs=4` 表示同一批 rollout 数据要被完整遍历 4 遍。正因为要重复利用，$\pi_\theta$ 才会逐渐偏离 $\pi_{\text{old}}$，才需要 ratio 修正和 clip 约束。
+
+**5.** clipfrac 很高说明什么？可能的原因有哪些？
+
+> **答：** clipfrac = 被 clip 掉的 token 比例。很高说明 **$\pi_\theta$ 已经离 $\pi_{\text{old}}$ 太远**，大量样本不再提供梯度，数据利用率低。
+> 可能原因：lr 太大、`ppo_epochs` 太多、$\epsilon$ 太小、advantage 尺度过大（没归一化）、batch 太小导致噪声大。
+
+**6.** $\pi_{old}$ 和 $\pi_{ref}$ 有什么区别？
+
+> **答：** $\pi_{\text{old}}$ 是**产生当前这批 rollout 的 policy 快照**，每轮 rollout 都更新，用于 importance ratio，是**短期训练基准**。
+> $\pi_{\text{ref}}$ 是**训练开始前冻结的模型**（通常是 SFT model），长期不动，用于 KL penalty，是**长期行为锚点**。
+
+**7.** LLM 里 $s_t$、$a_t$ 分别是什么？reward 在什么时候给？
+
+> **答：** $s_t=(x,y_{<t})$ 是 prompt 加上已生成的前缀；$a_t=y_t$ 是下一个 token。所以一条 response 就是一条 trajectory。
+> reward 通常是 **sequence-level 的**：只在最后一个 token 给（RM 打分或规则判对错），中间 token 的即时 reward 为 0（若有 reference KL 惩罚则逐 token 折进去）。这正是 credit assignment 困难的根源。
+

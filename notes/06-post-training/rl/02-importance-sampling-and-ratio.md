@@ -119,8 +119,33 @@ $$\boxed{L_{PPO}^{unclipped}=\mathbb E_{\pi_{old}}[rA]}$$
 
 ## 自测
 
-1. PPO 遇到的问题是 "$J$ 变了" 还是别的？准确说是什么变了？
-2. 用 500L/500R 的例子解释 $r$ 在做什么。
-3. 推导 $\nabla r=r\nabla\log\pi$。
-4. 为什么 surrogate 是 $rA$ 而不是 $rA\log\pi$？把 $\nabla(rA\log\pi)$ 算出来。
-5. 为什么 $r$ 在 rollout 刚结束时等于 1？
+**1.** PPO 遇到的问题是 "$J$ 变了" 还是别的？准确说是什么变了？
+
+> **答：** $J$ 没变，**采样分布变了**。我们要优化的仍然是 $\mathbb E_{a\sim\pi_\theta}[A]$，但手里的数据是 $a\sim\pi_{\text{old}}$ 采出来的。
+> 所以问题是「**用旧分布的样本估新分布的期望**」，解法是 importance sampling。
+
+**2.** 用 500L/500R 的例子解释 $r$ 在做什么。
+
+> **答：** 旧 policy 是 50/50，采了 500 个 L、500 个 R；新 policy 想要 90/10。
+> $r_L=0.9/0.5=1.8$：旧数据里 L 出现得**太少**了，每个 L 样本算 1.8 份 → $500\times1.8=900$；
+> $r_R=0.1/0.5=0.2$：R 出现得**太多**，每个算 0.2 份 → $500\times0.2=100$。
+> 于是用旧样本**重新加权**出了新分布下的 900/100。这就是 ratio 的全部含义：**分布修正的权重**。
+
+**3.** 推导 $\nabla r=r\nabla\log\pi$。
+
+> **答：** $r=\frac{\pi_\theta}{\pi_{\text{old}}}$，分母与 $\theta$ 无关，所以
+> $$\nabla r=\frac{\nabla\pi_\theta}{\pi_{\text{old}}}=\frac{\pi_\theta}{\pi_{\text{old}}}\cdot\frac{\nabla\pi_\theta}{\pi_\theta}=r\,\nabla\log\pi_\theta$$
+> 用的是 log trick $\nabla\log\pi=\nabla\pi/\pi$。
+
+**4.** 为什么 surrogate 是 $rA$ 而不是 $rA\log\pi$？把 $\nabla(rA\log\pi)$ 算出来。
+
+> **答：** 因为 $\nabla(rA)=A\,r\,\nabla\log\pi$，在 $r=1$ 时恰好等于 policy gradient $A\nabla\log\pi$，正是我们要的。
+> 而 $$\nabla(rA\log\pi)=A\big[\nabla r\cdot\log\pi+r\nabla\log\pi\big]=A\,r\,\nabla\log\pi\,(\log\pi+1)$$
+> 多出来一个 $(\log\pi+1)$ 因子，梯度就错了。
+> 直觉：$\log\pi$ 那一份「变成梯度的能力」已经由 $r$ 承担了，再乘一个 $\log\pi$ 等于重复计入。
+
+**5.** 为什么 $r$ 在 rollout 刚结束时等于 1？
+
+> **答：** rollout 刚结束、还没做任何参数更新时 $\theta=\theta_{\text{old}}$，于是 $\pi_\theta=\pi_{\text{old}}$，$r=1$。
+> 此时 surrogate 的梯度 $A\cdot1\cdot\nabla\log\pi$ 就是标准的 policy gradient。随着在同一批数据上做多次更新，$r$ 才逐渐偏离 1，clip 也才开始起作用。
+

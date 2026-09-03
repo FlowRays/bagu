@@ -116,13 +116,58 @@ def dpo_loss(logp_pol_w, logp_pol_l, logp_ref_w, logp_ref_l, beta=0.1):
 
 **工程技巧**：ref 的 log prob 可以在训练前**离线算好存下来**，这样训练时只需要一个模型在显存里。
 
-## 自测
+## 自测（口述版）
 
-1. ⭐ DPO 想解决 RLHF 的什么问题？
-2. ⭐⭐ **完整推导 DPO**：写出 KL-regularized RL 的闭式最优解，反解 reward，代入 Bradley-Terry，说明 $Z(x)$ 为什么消掉。
-3. ⭐ 为什么说「policy 自己隐式就是一个 reward model」？
-4. $h=0$ 时 loss 是多少？梯度里的 $\sigma(-h)$ 起什么作用？
-5. ⭐⭐ DPO 和 PPO 在 on/off-policy 上的本质区别？这导致 DPO 的什么局限？
-6. ⭐ DPO 「同时压低两者概率」的现象怎么解释？
-7. IPO / KTO / SimPO / ORPO / Online DPO 各改了什么？
-8. 实现时四个 log prob 是求和还是平均？ref 项怎么处理最省显存？
+**1.** DPO 想解决 RLHF 的什么问题？
+
+> **答：** RLHF 太重：要单独训一个 RM、要同时跑四个模型（actor / critic / ref / RM）、要 rollout、要调 PPO 的一堆超参。
+> DPO 的问题是：**能不能跳过 RM 和 RL，直接用偏好数据训 policy？**
+
+**2.** **完整推导 DPO**：写出 KL-regularized RL 的闭式最优解，反解 reward，代入 Bradley-Terry，说明 $Z(x)$ 为什么消掉。
+
+> **答：** **第一步**：$\max_\pi\mathbb E_\pi[r]-\beta D_{KL}(\pi\|\pi_{\text{ref}})$ 有闭式解
+> $$\pi^*(y|x)=\frac1{Z(x)}\pi_{\text{ref}}(y|x)\exp\Big(\frac{r(x,y)}{\beta}\Big),\quad Z(x)=\sum_y\pi_{\text{ref}}(y|x)e^{r(x,y)/\beta}$$
+> （因为该目标等价于 $\min_\pi D_{KL}(\pi\|\pi^*)$，在 $\pi=\pi^*$ 处取 0。）
+> **第二步**：两边取对数移项，**反解出 reward**
+> $$r(x,y)=\beta\log\frac{\pi^*(y|x)}{\pi_{\text{ref}}(y|x)}+\beta\log Z(x)$$
+> 这说明 **policy 自己隐式地就是一个 reward model**，不需要单独训 RM。
+> **第三步**：代入 $P(y_w\succ y_l)=\sigma(r_w-r_l)$ 做差，$\beta\log Z(x)$ **只依赖 $x$**，在做差时完全抵消：
+> $$r_w-r_l=\beta\log\frac{\pi^*(y_w)}{\pi_{\text{ref}}(y_w)}-\beta\log\frac{\pi^*(y_l)}{\pi_{\text{ref}}(y_l)}$$
+> 于是
+> $$\mathcal L_{\text{DPO}}=-\mathbb E\Big[\log\sigma\Big(\beta\log\tfrac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)}-\beta\log\tfrac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)}\Big)\Big]$$
+> 最漂亮的地方就是**那个算不出来的配分函数自己没了**。
+
+**3.** 为什么说「policy 自己隐式就是一个 reward model」？
+
+> **答：** 因为第二步反解出 $r(x,y)=\beta\log\frac{\pi(y|x)}{\pi_{\text{ref}}(y|x)}+\text{const}(x)$ —— 任何一个 policy 和 reference 的 log 比值，就定义了一个 reward 函数。
+> 所以不需要再训一个独立的 RM：优化 policy 本身，就等价于在优化那个隐式 reward。
+
+**4.** $h=0$ 时 loss 是多少？梯度里的 $\sigma(-h)$ 起什么作用？
+
+> **答：** $h=0$（模型对两者没有偏好差）时 $\mathcal L=-\log\sigma(0)=\log2\approx0.693$。
+> 梯度 $\nabla\mathcal L=-\beta\,\sigma(-h)\big[\nabla\log\pi_\theta(y_w)-\nabla\log\pi_\theta(y_l)\big]$，其中 $\sigma(-h)$ 是一个**自适应权重**：已经分对的样本（$h$ 大）权重趋近 0，分错的（$h$ 负）权重趋近 1。所以它自动聚焦在还没学会的偏好对上。
+
+**5.** DPO 和 PPO 在 on/off-policy 上的本质区别？这导致 DPO 的什么局限？
+
+> **答：** **DPO 是 off-policy 的**（用固定的离线偏好数据），**PPO/GRPO 是 on-policy 的**（持续用当前 policy 采样）。
+> 局限：DPO 只在给定的 $(y_w,y_l)$ 上学，**无法探索数据里没有的更好回答**，上限受限于离线数据的分布。这和 SFT vs OPD 的区别是同一个道理。
+
+**6.** DPO 「同时压低两者概率」的现象怎么解释？
+
+> **答：** 因为 loss 只约束 $\log\pi(y_w)$ 和 $\log\pi(y_l)$ 的**差值**，不约束绝对值。
+> 所以完全可能两者**一起下降**、只是 $y_l$ 降得更快，此时 $h$ 仍在增大、loss 照样下降。实践中经常观察到这个现象，后果是模型对偏好数据里的两个回答都变得不情愿生成。
+
+**7.** IPO / KTO / SimPO / ORPO / Online DPO 各改了什么？
+
+> **答：** **IPO**：把 BT 的 sigmoid 换成平方损失，缓解过拟合到确定性偏好；
+> **KTO**：只需要「好/坏」的**单边标注**，不需要成对，数据更好收集；
+> **SimPO**：**去掉 reference model**，用长度归一化的平均 logp 当隐式 reward；
+> **ORPO**：把 SFT loss 和偏好项合成一个，一步到位不需要单独 SFT；
+> **Online / 迭代 DPO**：每轮用当前 policy 采样、标注、再 DPO，把 off-policy 变成近似 on-policy —— **这是弥补 DPO 最大短板的方向**。
+
+**8.** 实现时四个 log prob 是求和还是平均？ref 项怎么处理最省显存？
+
+> **答：** 是**整条 response 的 token log prob 之和**（不是平均，除非用 SimPO 那种显式做长度归一化的变体）。
+> ref 那两项要 `detach`；最省显存的做法是**在训练前离线把 ref 的 log prob 算好存下来**，这样训练时显存里只需要一个模型。
+> 另外用 `F.logsigmoid` 而不是 `log(sigmoid(x))` 更稳；$\beta$ 典型 0.1，lr 比 SFT 还小（5e-7 ~ 5e-6）。
+

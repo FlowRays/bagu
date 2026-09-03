@@ -164,11 +164,50 @@ Distillation 阶段：有 teacher logits 就做 $L_{KD}=D_{KL}(p_T\|p_S)$（见 
 
 ## 自测（口述版）
 
-1. CLIP / SigLIP / DINO 三者的 loss 和更新对象分别是什么？
-2. Stage 0 冻结谁、训谁、loss 是什么？Qwen3-VL 的 S0–S3 分别改了什么？
-3. Pretrain CE 和 SFT CE 的数学形式差多少？真正的区别在哪？
-4. 三个模块是不是各有一个 loss？如果三个都训，写出三个更新式。
-5. 用一个具体例子说明语言 CE 怎么把梯度传到 ViT。
-6. 图片不是输出，那它有梯度吗？写出链式法则。真正"不需要考虑"的是什么？
-7. 什么情况下 SFT 要解冻 ViT？什么情况不用？
-8. RL 为什么倾向 freeze ViT？如果解冻会发生什么？
+**1.** CLIP / SigLIP / DINO 三者的 loss 和更新对象分别是什么？
+
+> **答：** **CLIP**：$L=\frac12(L_{I\to T}+L_{T\to I})$ softmax contrastive，更新 Vision Encoder + Text Encoder；
+> **SigLIP**：sigmoid pairwise 二分类，同样更新 VE + Text Encoder；
+> **DINO**：$\text{CE}(p_{\text{teacher}},p_{\text{student}})$，student 走 SGD、**teacher 走 EMA**，**没有 text encoder**。
+
+**2.** Stage 0 冻结谁、训谁、loss 是什么？Qwen3-VL 的 S0–S3 分别改了什么？
+
+> **答：** Stage 0（VL Alignment）：**VE frozen、Projector train、LLM frozen**，loss 就是普通 $L_{\text{NTP}}=-\sum_t\log p(y_t|I,y_{<t})$。Qwen3-VL 的 S0 约 67B tokens，只更新 merger。
+> S0 (8K, projector) → S1 (8K, ALL) → S2 (32K, ALL) → S3 (256K, ALL)。**S1/S2/S3 不是换了 loss，主要是改 data mixture + context length。**
+
+**3.** Pretrain 的 CE 和 SFT 的 CE 差多少？真正的区别在哪？
+
+> **答：** **数学形式几乎一样**，都是 $-\log p(y_t|\cdots)$。真正的区别是 **loss mask**：
+> pretrain 几乎全部 token 都算 loss；SFT 是 System→mask、User→mask、Image→没有离散 CE target、**只有 Assistant 段算 loss**。
+
+**4.** 三个模块是不是各有一个 loss？如果三个都训，写出三个更新式。
+
+> **答：** **通常不是。** 三个模块共享**同一个**最终任务 loss，梯度一路 $\mathcal L\to LLM\to Projector\to ViT$，谁 `requires_grad=True` 谁就更新。
+> $$\theta_V\leftarrow\theta_V-\eta_V\nabla_{\theta_V}L,\quad\theta_P\leftarrow\theta_P-\eta_P\nabla_{\theta_P}L,\quad\theta_L\leftarrow\theta_L-\eta_L\nabla_{\theta_L}L$$
+> pretraining 有时会额外加 auxiliary loss（image-text contrastive、grounding/bbox、masked image modeling、DINO self-distillation、detection），但那是**帮助 representation learning**，不是「ViT 必须有专门 loss 才能更新」。
+
+**5.** 用一个具体例子说明语言 CE 怎么把梯度传到 ViT。
+
+> **答：** `<image> Which button should I click?`，GT 是 “the blue button”。模型没看清颜色：$p(\text{red})=0.6$、$p(\text{blue})=0.1$，$L=-\log0.1$ 很大。
+> 反向路径：$L\to\text{logits}\to\text{LLM hidden}\to\text{visual embedding}\to\text{Projector}\to\text{ViT feature}$，等于告诉 ViT「**你现在产生的视觉表示没让后面区分出 blue**」。
+> 类比：$\text{image}\to\text{CNN}\to\text{classifier}\to\text{CE}$，输出也不是图片，CE 一样能训 CNN。
+
+**6.** 图片不是输出，那它有梯度吗？写出链式法则。真正"不需要考虑"的是什么？
+
+> **答：** **有梯度。** loss mask 上 image token 确实是 0（不作为 prediction target），但 assistant 的预测**依赖**图片，所以 $\frac{\partial L}{\partial H_v}\ne0$，进而
+> $$\frac{\partial L}{\partial\theta_P}=\frac{\partial L}{\partial H_v}\frac{\partial H_v}{\partial\theta_P},\qquad \frac{\partial L}{\partial\theta_V}=\frac{\partial L}{\partial H_v}\frac{\partial H_v}{\partial Z_v}\frac{\partial Z_v}{\partial\theta_V}$$
+> 真正「不需要考虑」的只是：**给 image token 定义一个 token-level 的 CE label**。
+> 一句话：**image token 是 condition，不是 prediction target；但 condition 仍然在 computation graph 里。**
+
+**7.** 什么情况下 SFT 要解冻 ViT？什么情况不用？
+
+> **答：** 看数据在改变什么：
+> 改变「**怎么思考 / 怎么回答**」（math CoT、instruction following、agent planning、输出格式）→ **freeze 就够**，perception 没有 domain shift；
+> 改变「**怎么看**」（医学影像、卫星图、GUI 小图标、游戏画面、小目标检测、OCR、spatial grounding、特殊传感器）→ **unfreeze 可能明显更重要**，因为瓶颈就在 $I\to Z_v$。
+
+**8.** RL 为什么倾向 freeze ViT？如果解冻会发生什么？
+
+> **答：** 数学上完全可以解冻，policy gradient 一样能传回 ViT，reward 可以真的改变视觉表示。
+> 但**实践中倾向 freeze**，因为 reward 对 perception 来说太**间接**：$R=-1$ 可能因为图没看清、reasoning 错、planning 错、action sampling 错、长程 credit assignment 错。全参更新会让 ViT 为这个 reward 承担部分责任，容易造成 **representation drift**，甚至破坏已有的 OCR / detection / general vision 能力。
+> 所以：**SFT 可以较积极地 unfreeze vision，RL 更保守地 freeze vision。**
+

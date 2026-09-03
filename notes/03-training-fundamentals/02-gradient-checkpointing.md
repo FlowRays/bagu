@@ -102,9 +102,38 @@ $$\boxed{\text{Gradient Checkpointing 只动 Activation}}$$
 
 ## 自测（口述版）
 
-1. checkpoint 存的是什么、丢的是什么？backward 怎么恢复？
-2. LLM 里最常见的 checkpoint 粒度是什么？写出 PyTorch 的两行实现。
-3. 如果什么都不存、每次从头重算，activation 和计算量各是什么量级？为什么不这么做？
-4. 它能省多少显存？为什么不能给一个固定百分比？
-5. 推导额外计算约 33%。为什么实测 wall-clock 往往低于这个数？
-6. 它对 parameter / gradient / optimizer 有影响吗？为什么？
+**1.** checkpoint 存的是什么、丢的是什么？backward 怎么恢复？
+
+> **答：** 存的是 **block 边界的 hidden**（某个计算段的输入），丢的是 block 内部的 activation（Q/K/V、MLP intermediate、softmax 中间量）。
+> backward 到该 block 时，从保存的 input 重新 forward 一次得到内部 activation，backward 完立刻释放。所以更准确的名字是 **activation recomputation**。
+
+**2.** LLM 里最常见的 checkpoint 粒度是什么？写出 PyTorch 的两行实现。
+
+> **答：** 以**一个 Transformer block** 为单位（不是教科书里「每 $\sqrt N$ 层放一个」）。
+> ```python
+> for layer in model.layers:
+>     hidden = checkpoint(layer, hidden, use_reentrant=False)
+> ```
+> HuggingFace 一行 `model.gradient_checkpointing_enable()`。注意它**通常不是默认开启**的，因为会牺牲吞吐。
+
+**3.** 如果什么都不存、每次从头重算，activation 和计算量各是什么量级？为什么不这么做？
+
+> **答：** activation 可以接近 $O(1)$，但 recomputation 是 $N+(N-1)+\cdots+1=O(N^2)$ 次 forward，完全不划算。
+> 实际做法是每个 block **只多 forward 一次**，这才是额外计算只有约 33% 而不是 $O(N^2)$ 的原因。也不可能真降到 0：至少要留 checkpoint 边界输入、当前正在 backward 的那段 activation、RNG state。
+
+**4.** 它能省多少显存？为什么不能给一个固定百分比？
+
+> **答：** 因为它**只影响 $M_A$**，总收益取决于 activation 原本占总显存多大比例。
+> 经验：**activation 下降约 40%–70%，总显存下降约 20%–40%**（长 context / 大 microbatch 时更明显）。不要背「省 50% 显存」。
+> 如果 model states 110 GB、activation 只有 10 GB，checkpoint 救不了，那时候要上 ZeRO。
+
+**5.** 推导额外计算约 33%。为什么实测 wall-clock 往往低于这个数？
+
+> **答：** 粗估 forward $=F$、backward $\approx2F$。普通训练 $F+2F=3F$；full checkpoint 是 $F+F+2F=4F$，额外 $\frac{4F-3F}{3F}=33\%$。
+> 实测通常只慢 10%–30%，因为 forward 不一定占总时间 1/3、通信可以重叠、kernel 利用率、FlashAttention、checkpoint 范围不同。记两个数：**理论 +33%，实测慢 15%–30%**。
+
+**6.** 它对 parameter / gradient / optimizer 有影响吗？为什么？
+
+> **答：** **完全没有。** 参数无论如何都必须在；Adam 的 $m,v$ 每个参数一份；backward 最终还是要得到 $\nabla_\theta L$。
+> 所以记死：**Gradient Checkpointing 只动 Activation。**
+

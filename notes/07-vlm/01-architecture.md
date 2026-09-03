@@ -104,9 +104,39 @@ $$\boxed{\text{很多经典 VLM 的核心训练就是普通 next-token cross ent
 
 ## 自测（口述版）
 
-1. $336\times336$、patch=14 得到多少 visual token？为什么？
-2. projector 如果随机初始化为什么没用？它真正在做什么？
-3. 为什么一个两层 MLP 就够？projector 的目标是不是 $P(z_{\text{dog}})=E(\text{"dog"})$？
-4. Stage 1 冻结哪些、训哪些？loss 是什么？
-5. LLM 冻结了，梯度还能穿过它吗？"冻结"到底冻的是哪一步？
-6. 画出 visual/text token 的四象限 attention，指出哪一格最关键。
+**1.** $336\times336$、patch=14 得到多少 visual token？为什么？
+
+> **答：** $336/14=24$，二维就是 $24\times24=\mathbf{576}$ 个 visual token。
+> 每个 patch（$14\times14\times3$）先线性投影成 embedding，再过 ViT 的 self-attention，得到 $Z_v\in\mathbb R^{576\times d_v}$。
+
+**2.** projector 如果随机初始化为什么没用？它真正在做什么？
+
+> **答：** 随机初始化时，它输出的 4096 维向量和 LLM 已经学会的语义空间**毫无对应关系** —— 维度对上了但语义没对上。
+> 它真正做的是 **representation alignment，而不只是 dimension matching**：把 Vision Encoder 的表示翻译成 LLM 能消费的 conditioning representation。
+
+**3.** 为什么一个两层 MLP 就够？projector 的目标是不是 $P(z_{\text{dog}})=E(\text{"dog"})$？
+
+> **答：** 够是因为 **Vision Encoder 本身已经很强**：CLIP ViT 几十层之后输出的已是高度语义化的特征（这是一个人、他拿着杯子、这个区域是红色）。projector 不需要重新「学会看图」，只需学 `Vision representation → LLM 能消费的 representation`，比 `raw pixel → language understanding` 简单太多。CLIP 尤其关键，它的训练目标就是图文对齐，视觉空间**本来就被语言监督塑形过**。
+> 目标**不是** $P(z_{\text{dog}})=E(\text{"dog"})$，这通常也不是训练目标。只要求 $P(z)$ 进入 LLM 后经过若干层 self-attention 能让 LLM 正确预测 “There is a dog in the image.”。
+
+**4.** Stage 1 冻结哪些、训哪些？loss 是什么？
+
+> **答：** **Frozen Vision Encoder + Trainable Projector + Frozen LLM**。
+> 数据是 image-caption pair，loss 就是普通 next-token prediction $\mathcal L=-\sum_t\log p_\theta(y_t|y_{<t},I)$。
+> 能动的只有 projector，梯度逼着它学「我要输出什么样的 embedding，才能让这个 **frozen** LLM 正确生成 caption」。
+
+**5.** LLM 冻结了，梯度还能穿过它吗？"冻结"到底冻的是哪一步？
+
+> **答：** **能穿过。** 冻结 $\theta_{LLM}$ 只意味着**不执行** $\theta_{LLM}\leftarrow\theta_{LLM}-\eta\nabla_{\theta_{LLM}}\mathcal L$ 这一步参数更新；
+> 但 $\frac{\partial\mathcal L}{\partial h_{\text{vision}}}$ **照样能算出来**，梯度可以继续沿链式法则传到 projector。
+> 这是最容易搞混的一点：冻的是「参数更新」，不是「梯度回传」。
+
+**6.** 画出 visual/text token 的四象限 attention，指出哪一格最关键。
+
+> **答：** 拼成 $H=[H_v;H_t]$ 后就是普通 self-attention，四格是：
+> | | $K_{\text{vision}}$ | $K_{\text{text}}$ |
+> |---|---|---|
+> | $Q_{\text{vision}}$ | V→V | V→T |
+> | $Q_{\text{text}}$ | **T→V** | T→T |
+> 最关键的是 **T→V**：文本 token 「dog」的 query 直接 attend 到相关 visual patch，$q_{\text{dog}}^\top k_{\text{patch}}$ 大 → attention weight 高 → 从那块图像区域取信息。这就是 single-stream / unified self-attention 的核心直觉。
+

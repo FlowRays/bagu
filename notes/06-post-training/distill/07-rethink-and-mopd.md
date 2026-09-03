@@ -225,10 +225,41 @@ $$\boxed{\text{MOPD 的设计天然满足 Rethink OPD 总结出的两个成功�
 
 ## 自测（口述版）
 
-1. "teacher 越强蒸馏效果越好"错在哪？给一个实验证据。
-2. 成功 OPD 的两个条件是什么？各举一个失败的反例。
-3. Top-K overlap 的实验发现是什么？为什么说"OPD 的学习发生在共享的高概率区域"？
-4. teacher / student 不 compatible 时的两个 recipe 是什么？为什么 cold start 用的是 off-policy SFT 而不是继续 OPD？
-5. MOPD 和普通 OPD 在算法上差多少？写出它的 advantage。
-6. 为什么不直接 Mix-RL？MOPD 解耦了哪两件事？
-7. 为什么 MOPD 的 teacher 必须从同一个 SFT checkpoint 出发？用 Rethink OPD 的结论解释。
+**1.** "teacher 越强蒸馏效果越好"错在哪？给一个实验证据。
+
+> **答：** 错在把 **teacher capability 和 distillability 等同**了：$\text{Teacher capability}\ne\text{Distillability}$。
+> 证据：MOPD 把同源 RL teacher 换成更强的 Qwen3-235B teacher 后，**teacher benchmark 更强但效果反而更差** —— 初始 KL 从约 0.04 升到约 0.19，policy-gradient 版本出现 entropy 收缩，top-k 版本甚至训练发散。
+
+**2.** 成功 OPD 的两个条件是什么？各举一个失败的反例。
+
+> **答：** ① **thinking pattern compatible**（在 student-visited states 上两者的高概率 continuation 有重叠）；② **teacher 真的提供新能力**。
+> 反例一（有新能力、不兼容）：换一个完全异构的超强 reasoning teacher，两者高概率区域几乎不重合，reverse KL 下大量 token 拿到负 advantage，训练可能 collapse。
+> 反例二（兼容、无新能力）：Qwen 1.5B ← Qwen 7B 但 teacher 没做针对性 post-training，论文的 weak-to-strong reverse distillation 显示两者在相关状态上的分布几乎 indistinguishable，收益很小。
+
+**3.** Top-K overlap 的实验发现是什么？为什么说"OPD 的学习发生在共享的高概率区域"？
+
+> **答：** 发现：成功的 OPD 表现为「**初期就已有较大 overlap → 训练中 overlap 持续升高**」，而且这个**很小的共享 token 集合覆盖 97%–99% 的 probability mass**。
+> 所以 OPD 不是靠 teacher 把 student 完全不知道的 token 硬拽进来，而是在两者**共同认为 plausible 的候选**里**重新分配概率**（例：student `A .4 B .3 C .2`、teacher `A .1 B .7 C .15` → student 变成 `A .2 B .6 C .15`）。
+> 论文称之为 progressive alignment on high-probability tokens at student-visited states。这也正是 top-k OPD 合理的原因。
+
+**4.** teacher / student 不 compatible 时的两个 recipe 是什么？为什么 cold start 用的是 off-policy SFT 而不是继续 OPD？
+
+> **答：** ① **off-policy cold start**：teacher 先生成 trajectory，拿这些做一小段 SFT 把 student 拉进 teacher 的区域、提高 Top-K overlap，再切 OPD；② **teacher-aligned prompt**：让 OPD 的 prompt 尽量贴近 teacher RL 时的格式（但过度 in-distribution 会降 entropy，仍需多样性）。
+> 用 SFT 是因为它的 **support-covering** 能力正好补上 reverse-KL OPD 缺的那一环：**SFT = support expansion，OPD = on-policy refinement**。OPD 本身只在 student 已访问的区域学，不 compatible 时它根本走不出去。
+
+**5.** MOPD 和普通 OPD 在算法上差多少？写出它的 advantage。
+
+> **答：** **几乎没差**，只是 teacher 按 domain 切换：
+> $$\hat A_{\text{MOPD},t}=\operatorname{sg}\big[\log\pi_{\phi_d}(y_t)-\log\pi_\theta(y_t)\big]$$
+> $d$ 表示 domain —— 哪个 domain 的题就用哪个 specialist teacher 监督。算法上没有神秘的新东西。
+
+**6.** 为什么不直接 Mix-RL？MOPD 解耦了哪两件事？
+
+> **答：** 直接 Mix-RL 的问题：各 domain 的 reward 形式、rollout 长度、RL 难度、超参、收敛速度都不一样，混在一起互相干扰。
+> MOPD 解耦了 **能力生产**（各 domain 独立 RL 出 specialist）和 **能力集成**（multi-teacher OPD 蒸回统一 student）。而且 merge 的是 **policy behavior 而不是 parameter**，各领域团队可以独立迭代。
+
+**7.** 为什么 MOPD 的 teacher 必须从同一个 SFT checkpoint 出发？用 Rethink OPD 的结论解释。
+
+> **答：** 因为 $T_d=\pi_0\xrightarrow{\text{domain RL}}\pi_{T_d}$，与 student（也来自 $\pi_0$）**天生 thinking pattern 高度兼容**（满足条件 ①）；同时 domain RL 又赋予了 teacher **真正的新能力**（满足条件 ②）。
+> **恰好同时满足 Rethink OPD 总结出的两个成功条件**，所以设计上天然合理。这也解释了为什么「找一个 benchmark 更强的巨大外部 teacher」未必比「从自己 checkpoint RL 出来的 teacher」更好。
+

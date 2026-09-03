@@ -137,14 +137,50 @@ ZeRO **不是**和 data parallel 对立的另一种 parallelism，它就是**更
 
 ## 自测（口述版）
 
-1. DDP 每张卡放什么？它省 model states 吗？7B 每卡多少 GB？
-2. ZeRO 三个 stage 分别切什么？为什么是 $O\to G\to P$ 这个顺序？
-3. 7B + 8 卡，四种方案每卡 model states 各多少？当场算。
-4. ZeRO-2 的 backward 用什么 collective 代替 All-Reduce？为什么它和 optimizer shard 天然对上？
-5. 推导 DDP / ZeRO-2 / ZeRO-3 的通信量分别是 $2M$ / $2M$ / $3M$。
-6. "ZeRO 用通信和计算换显存"这句话错在哪？
-7. 通信 +50% 等于训练慢 50% 吗？为什么？
-8. activation 会被 ZeRO-3 除以 D 吗？为什么？
-9. FSDP1 和 FSDP2 的区别是什么？FSDP 一定等于 ZeRO-3 吗？
+**1.** DDP 每张卡放什么？它省 model states 吗？7B 每卡多少 GB？
 
-> 带答案的题库在 [显存 / 训练工程 / 分布式 自测](../03-training-fundamentals/self-test.md)。
+> **答：** 每张卡放**一份完整模型**（$P+G+O$）+ 自己那份 activation，处理不同数据，backward 后 All-Reduce 梯度。
+> **不省 model states**。7B 按 12 B/param 就是 **84 GB/卡**，8×80G 也放不下。**DDP 增加吞吐，不解决 model-state 冗余。**
+
+**2.** ZeRO 三个 stage 分别切什么？为什么是 $O\to G\to P$ 这个顺序？
+
+> **答：** ZeRO-1 切 optimizer state，ZeRO-2 再切 gradient，ZeRO-3 再切 parameter。
+> 顺序是因为通常 $O>P\approx G$（Adam 的 $m,v$ 是 FP32，8 B/param），**先切最大的最划算**，而且 optimizer 的切分通信复杂度最低。
+
+**3.** 7B + 8 卡，四种方案每卡 model states 各多少？当场算。
+
+> **答：** $P=14$、$G=14$、$O=56$ GB：
+> DDP $=14+14+56=$ **84 GB**；ZeRO-1 $=14+14+56/8=$ **35 GB**；ZeRO-2 $=14+14/8+56/8=$ **22.75 GB**；ZeRO-3 $=84/8=$ **10.5 GB**。
+
+**4.** ZeRO-2 的 backward 用什么 collective 代替 All-Reduce？为什么它和 optimizer shard 天然对上？
+
+> **答：** 用 **Reduce-Scatter**：每张卡只留下自己负责的那一片聚合后的 gradient。
+> 因为它正好也持有对应的 optimizer shard，于是 `G_i + O_i → 更新 P_i`，分工天然一致，不需要额外通信去凑。
+
+**5.** 推导 DDP / ZeRO-2 / ZeRO-3 的通信量分别是 $2M$ / $2M$ / $3M$。
+
+> **答：** 高效 All-Reduce $=$ Reduce-Scatter $+$ All-Gather，所以 $C_{\text{DDP}}\approx M+M=2M$。
+> ZeRO-2：backward 的 Reduce-Scatter 梯度 $M$ + step 后 All-Gather 参数 $M$ $=2M$。
+> ZeRO-3：forward All-Gather 参数 $M$ + backward All-Gather 参数 $M$ + gradient Reduce-Scatter $M$ $=3M$，相对 DDP **+50%**。
+> 所以 **ZeRO-2 是 sweet spot：显存省很多，通信 volume 却没增加。**
+
+**6.** 「ZeRO 用通信和计算换显存」这句话错在哪？
+
+> **答：** 错在「计算」。**ZeRO 主要用通信换显存，基本不增加模型的数学计算量** —— 它不像 gradient checkpointing 那样把 forward 重算一遍，矩阵乘 FLOPs 基本不变，增加的是 collective communication 和参数生命周期管理。
+
+**7.** 通信 +50% 等于训练慢 50% 吗？为什么？
+
+> **答：** 不等于。$T=T_{\text{compute}}+T_{\text{exposed communication}}+\cdots$，大量通信可以和计算 **overlap**（backward layer 30 的同时 reduce-scatter layer 31 的梯度；算 layer $i$ 的同时 prefetch layer $i+1$ 的参数）。
+> 经验：ZeRO-1 约 0–5%、ZeRO-2 约 0–10%、ZeRO-3 约 5–25%；多机 + 网络慢 + 小模型 + overlap 差时可能 20–50%+。
+
+**8.** activation 会被 ZeRO-3 除以 D 吗？为什么？
+
+> **答：** **不会。** ZeRO 只处理 $P,G,O$；activation 取决于 $B_{\text{local}},L,H$，每张 DP rank forward 自己的那份数据就必须产生自己的 activation。
+> $M_{\text{ZeRO3/device}}\approx\frac{P+G+O}{D}+A_{\text{local}}+M_{\text{temp}}$。这就是「开了 ZeRO-3 长 context 还是 OOM」的原因，还得配 gradient checkpointing、减 microbatch、FlashAttention。
+
+**9.** FSDP1 和 FSDP2 的区别是什么？FSDP 一定等于 ZeRO-3 吗？
+
+> **答：** **FSDP1/FSDP2 是 PyTorch 的两代实现，不是 stage 1 / stage 2**，别和 ZeRO-1/2 混。
+> FSDP1 把一组参数 flatten 成一个大 `FlatParameter` 再 shard；FSDP2 用 **DTensor + per-parameter sharding**（每个参数自己在 dim-0 上切），更容易和其他并行组合、更好管理状态。PyTorch 已建议迁移到 FSDP2。
+> **不一定等于 ZeRO-3**：只有 `FULL_SHARD` 才约等于 ZeRO-3；`SHARD_GRAD_OP` 被官方描述为 **ZeRO-2-style**。而且思想一致不代表实现等价。
+

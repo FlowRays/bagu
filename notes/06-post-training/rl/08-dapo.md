@@ -204,9 +204,37 @@ $$\boxed{\text{Soft Overlong Punishment：用长度相关的连续 penalty}}$$
 
 ## 自测
 
-1. DAPO 全称是什么？四个改动分别是什么？
-2. Clip-Higher 改了什么？为什么只放宽上界？举那个 $0.001\to0.0012$ 的例子。
-3. Dynamic Sampling 解决什么问题？$A=0$ 时到底浪费的是什么？
-4. 手算：response A 有 2 个 token、B 有 10 个 token，GRPO 和 DAPO 的 batch loss 分别怎么算？权重比各是多少？
-5. GRPO 和 DAPO 哪个倾向生成更长的回答？为什么？这是"直接奖励长度"吗？
-6. 默写 Soft Overlong Punishment 的三段公式，并算 $|y|=14336$ 时的 $R_{length}$。
+**1.** DAPO 全称是什么？四个改动分别是什么？
+
+> **答：** **D**ecoupled clip **a**nd dynamic s**a**mpling **P**olicy **O**ptimization。
+> 四个改动：① **Clip-Higher**（上下界解耦，放宽上界）；② **Dynamic Sampling**（过滤掉组内 reward 全同的 prompt）；③ **Token-level loss 聚合**（按 token 而不是按 response 平均）；④ **Soft Overlong Punishment**（对超长回答用连续的软惩罚）。
+
+**2.** Clip-Higher 改了什么？为什么只放宽上界？举那个 $0.001\to0.0012$ 的例子。
+
+> **答：** 把 $\text{clip}(r,1-\epsilon,1+\epsilon)$ 改成上下界解耦的 $\text{clip}(r,1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})$，并把 $\epsilon_{\text{high}}$ 放大（如 0.28）。
+> 只放宽上界是为了**保护低概率 token 的探索**：一个概率 0.001 的 token 即使 $r$ 顶到上界 1.2，也只能涨到 0.0012，涨幅微乎其微；而高概率 token（如 0.9）同样的 $r$ 就能涨很多。统一的上界实际上**不成比例地压制了低概率 token**，导致熵快速塌缩、模型不再探索。放宽上界给低概率 token 更大的成长空间。
+
+**3.** Dynamic Sampling 解决什么问题？$A=0$ 时到底浪费的是什么？
+
+> **答：** 解决**组内 reward 全相同导致 advantage 全为 0** 的问题（简单题全对、难题全错）。
+> $A=0$ 时梯度确实为 0，「训练和不训练没区别」这句话就**梯度而言是对的**；但浪费的是**这批 rollout 的采样算力** —— 你花了 $G$ 次生成的成本，却没换来任何学习信号。而 rollout 恰恰是 RL 里最贵的一环。
+> DAPO 的做法是持续采样直到凑够足够多「组内有差异」的 prompt 再进入训练。
+
+**4.** 手算：response A 有 2 个 token、B 有 10 个 token，GRPO 和 DAPO 的 batch loss 分别怎么算？权重比各是多少？
+
+> **答：** 设每个 token 的 loss 都是 1。
+> **GRPO（sample-level）**：先对每条 response 内部求平均，$L_A=1$、$L_B=1$，再对两条平均 → $L=1$。权重比 **A : B = 1 : 1**，也就是每个 token 的实际权重 A 是 B 的 5 倍。
+> **DAPO（token-level）**：所有 token 放在一起除以总 token 数，$L=\frac{2\times1+10\times1}{12}=1$。权重比 **A : B = 2 : 10 = 1 : 5**，每个 token 权重相同。
+
+**5.** GRPO 和 DAPO 哪个倾向生成更长的回答？为什么？这是"直接奖励长度"吗？
+
+> **答：** **DAPO** 更倾向长回答。因为 token-level 聚合下长回答贡献的 token 多、占的总权重大，梯度更容易被长序列主导。
+> 但**不是「直接奖励长度」**：如果长回答本身 reward 不高，或触发了 overlong punishment，一样会被压制。准确说法是「**长的高质量 response 相对更容易获得更大的总训练影响**」。所以 DAPO 需要配合 overlong penalty、长度控制、dynamic sampling 一起用。
+
+**6.** 默写 Soft Overlong Punishment 的三段公式，并算 $|y|=14336$ 时的 $R_{length}$。
+
+> **答：** 设 $L_{\max}=16384$、$L_{\text{cache}}=4096$，安全区上界是 $L_{\max}-L_{\text{cache}}=12288$：
+> $$R_{\text{length}}(|y|)=\begin{cases}0 & |y|\le L_{\max}-L_{\text{cache}}\\[4pt] \dfrac{(L_{\max}-L_{\text{cache}})-|y|}{L_{\text{cache}}} & L_{\max}-L_{\text{cache}}<|y|\le L_{\max}\\[6pt] -1 & |y|>L_{\max}\end{cases}$$
+> $|y|=14336$ 落在中间段：$\frac{12288-14336}{4096}=\frac{-2048}{4096}=\mathbf{-0.5}$。
+> 三段直觉：安全区完全不罚 → 软惩罚区随长度线性从 0 降到 $-1$ → 超过 $L_{\max}$ 直接 $-1$。演进路径是「粗暴给截断样本 $R=0$ → Overlong Filtering 直接 mask 掉 → 长度相关的连续 soft penalty」。
+

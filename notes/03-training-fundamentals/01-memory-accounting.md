@@ -128,11 +128,44 @@ $$\boxed{M=P+G+O+A\ \Longrightarrow\ \text{每个技术对症一块}}$$
 
 ## 自测（口述版）
 
-1. 写出 SFT 显存的两大类拆分，各自和什么变量有关。
-2. FP32 / FP16 / BF16 各占几 byte？BF16 相比 FP16 的优势是什么，代价是什么？
-3. 12 bytes/param 和 16 bytes/param 分别对应什么配置？7B 各是多少 GB？
-4. 为什么 backward 必须保存 forward 的 activation？举一个最小例子。
-5. activation 正比于哪几个量？估算 $B=4,L=8192,H=4096$ 时一份 BF16 hidden 的大小。
-6. FlashAttention 把 attention 的什么从 $O(L^2)$ 降到 $O(L)$？什么没变？
-7. logits 为什么可能有近 10 GB？框架怎么处理？
-8. batch 从 1 加到 8，哪几项显存变、哪几项不变？
+**1.** 写出 SFT 显存的两大类拆分，各自和什么变量有关。
+
+> **答：** $M=\underbrace{M_P+M_G+M_O}_{\text{model states}}+\underbrace{M_A+M_{\text{logits}}+M_{\text{temp}}}_{\text{runtime}}$
+> model states 只和**参数量 $N$** 有关；runtime 只和 $B,L,H,N_{\text{layer}},V$ 有关。这个分离是所有显存直觉的地基。
+
+**2.** FP32 / FP16 / BF16 各占几 byte？BF16 相比 FP16 的优势是什么，代价是什么？
+
+> **答：** 4 / 2 / 2 byte（$8\ \text{bits}=1$ Byte）。
+> BF16 的 exponent 是 8 位（和 FP32 一样），**动态范围大、不容易 overflow**；FP16 只有 5 位。代价是 BF16 的 mantissa 只有 7 位（FP16 有 10 位），**精度更低**，所以关键累加要放在 FP32 做。
+
+**3.** 12 bytes/param 和 16 bytes/param 分别对应什么配置？7B 各是多少 GB？
+
+> **答：** **12 B/param**：BF16 parameter 2 + BF16 gradient 2 + Adam $m$ 4 + Adam $v$ 4 → 7B 是 **84 GB**。
+> **16 B/param**：再加 FP32 master weight 4 → 7B 是 **112 GB**。
+> 正确说法是「经典 mixed-precision Adam 估算通常 12–16 Byte/parameter，取决于 gradient precision 和是否维护 FP32 master weights」，别说成「一定 16」。
+
+**4.** 为什么 backward 必须保存 forward 的 activation？举一个最小例子。
+
+> **答：** $y=Wx$ 的 backward 是 $\frac{\partial L}{\partial W}=\frac{\partial L}{\partial y}x^\top$，**需要 forward 的输入 $x$**。所以 autograd 会建 computation graph 并保留中间量等 backward 用。
+> Transformer 一层要存 input hidden、normalized hidden、Q/K/V、attention output、MLP intermediate（$H\to3H\sim4H$，比 hidden 还大）。
+
+**5.** activation 正比于哪几个量？估算 $B=4,L=8192,H=4096$ 时一份 BF16 hidden 的大小。
+
+> **答：** $M_A\propto B\times L\times H\times N_{\text{layer}}$。
+> $4\times8192\times4096\times2\ \text{B}\approx268$ MB —— **仅仅一份 tensor**，再乘每层若干份、乘 32/40/80 层，很快就是几十 GB。
+
+**6.** FlashAttention 把 attention 的什么从 $O(L^2)$ 降到 $O(L)$？什么没变？
+
+> **答：** 降的是**显存**：分块计算，不把完整的 $L\times L$ attention 矩阵写进 HBM。
+> **计算复杂度仍然是 $O(L^2)$**，省的是显存和 IO。
+
+**7.** logits 为什么可能有近 10 GB？框架怎么处理？
+
+> **答：** LM head 输出 $Z\in\mathbb R^{B\times L\times V}$，$B=4,L=8192,V=150\text{K}$、BF16 → $4\times8192\times150000\times2\approx9.8$ GB。
+> 框架用 **fused cross entropy / chunked loss / 及时释放**，算一块释放一块，避免长期保存完整 logits。
+
+**8.** batch 从 1 加到 8，哪几项显存变、哪几项不变？
+
+> **答：** parameter / gradient / optimizer（model states）**完全不变**，activation 大幅增加。
+> 反过来 7B→14B 时 model states 约 ×2，activation 也因 $H$、$N_{\text{layer}}$ 变大而增加。**参数量和 batch/seq 影响的是不同的东西。**
+

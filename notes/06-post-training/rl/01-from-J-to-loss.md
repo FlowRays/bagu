@@ -114,7 +114,23 @@ $$\boxed{s,a \text{ 必须是由当前的 } \pi_\theta \text{ 采出来的}}$$
 
 ## 自测
 
-1. $J$ 和 $L$ 是什么关系？为什么可以用 $L$ 训练？
-2. 为什么说 "$J=\mathbb E[A\log\pi]$" 是错的？
-3. 写出 policy gradient 定理，说明它给的是什么。
-4. policy gradient 成立的隐藏前提是什么？PPO 在哪一步破坏了它？
+**1.** $J$ 和 $L$ 是什么关系？为什么可以用 $L$ 训练？
+
+> **答：** $J(\theta)=\mathbb E_{\tau\sim\pi_\theta}[G]$ 是真正想优化的目标；$L$ 是为了能用 autograd 而**人为构造的代理**。
+> $J\ne L$，但我们要求 $\nabla_\theta L=\nabla_\theta J$（至少在当前更新点成立）。optimizer 只用梯度，所以只要梯度对，用 $L$ 训练就等价于优化 $J$。
+
+**2.** 为什么说 "$J=\mathbb E[A\log\pi]$" 是错的？
+
+> **答：** policy gradient 定理给出的是 **$\nabla J$ 的形式**，不是另一个和 $J$ 相等的表达式。
+> $A\log\pi$ 只是一个 surrogate：它的**梯度**等于 $\nabla J$，但**函数值**并不等于 $J$。混淆这两者是这一章最核心的卡点。
+
+**3.** 写出 policy gradient 定理，说明它给的是什么。
+
+> **答：** $$\nabla_\theta J=\mathbb E_{s,a\sim\pi_\theta}\big[A(s,a)\,\nabla_\theta\log\pi_\theta(a|s)\big]$$
+> 它给的是 **$\nabla J$（梯度）**，不是 $J$ 本身。实际含义很直观：$A>0$ 就提高该 action 的概率，$A<0$ 就降低。
+
+**4.** policy gradient 成立的隐藏前提是什么？PPO 在哪一步破坏了它？
+
+> **答：** 隐藏前提是 **on-policy**：期望里的 $s,a$ 必须来自**当前**的 $\pi_\theta$。
+> PPO 为了让同一批 rollout 数据多跑几个 epoch，数据实际来自 $\pi_{\text{old}}$ 而不是当前的 $\pi_\theta$，这就破坏了前提。补救办法就是 importance sampling —— 引入 ratio $r=\pi_\theta/\pi_{\text{old}}$ 做分布修正。
+

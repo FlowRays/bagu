@@ -126,12 +126,44 @@ $$\boxed{\text{SFT/OPD 的瓶颈更偏 training memory}}\qquad\boxed{\text{RL �
 
 ## 自测（口述版）
 
-1. 把训练显存拆成 6 类，指出哪两类拉开了 SFT/OPD/RL 的差距。
-2. teacher 相比一个"训练中的第二个模型"便宜在哪？7B 和 32B 各差多少？
-3. teacher 需要 KV cache 吗？为什么？
-4. sampled-token 和 full-vocab 的 supervision tensor 各多大？用 $B=8,L=8192,V=150$K 算。
-5. 为什么不能把 rollout / teacher / training 的显存直接相加？峰值应该怎么写？
-6. GRPO 和 PPO 各要几个模型？critic 为什么特别重？
-7. $\pi_{\text{old}}$ 要不要常驻一份权重？工程上怎么做？
+**1.** 把训练显存拆成 6 类，指出哪两类拉开了 SFT/OPD/RL 的差距。
 
-> 带答案的题库在 [显存 / 训练工程 / 分布式 自测](../03-training-fundamentals/self-test.md)。
+> **答：** $$M=M_{\text{param}}+M_{\text{grad}}+M_{\text{optim}}+M_{\text{activation}}+M_{\text{KV/cache}}+M_{\text{extra models}}$$
+> 真正拉开差距的是**最后两项**：额外模型（teacher / ref / critic / RM）和 rollout 的 KV cache。前四项 SFT 就有，各算法差别不大。
+
+**2.** teacher 相比一个「训练中的第二个模型」便宜在哪？7B 和 32B 各差多少？
+
+> **答：** teacher **不训练**，所以只有 $P_T$，**没有 $G_T$ 和 $O_T$**。
+> 7B teacher：BF16 权重约 14 GB；若它也训练则要 $14+14+56=84$ GB，省了 70 GB。
+> 32B teacher：BF16 权重 64 GB；若训练则约 384 GB。
+> 所以 teacher 虽然可以很大，frozen inference 仍然比训练便宜一个量级。
+
+**3.** teacher 需要 KV cache 吗？为什么？
+
+> **答：** **不需要**（就 Thinking Machines 那种 recipe 而言）。teacher 是对 student **已经生成好的 trajectory** 做一次 **teacher-forcing forward** 拿 logprob，不是 autoregressive 逐 token 生成，所以不需要维护解码用的 KV cache。
+> 这和 RL 的 rollout engine 完全不同。
+
+**4.** sampled-token 和 full-vocab 的 supervision tensor 各多大？用 $B=8,L=8192,V=150$K 算。
+
+> **答：** **sampled-token（reverse KL）**：teacher 只返回 student 采样 token 的一个标量 logprob，$[B,L]$，FP32 下 $8\times8192\times4\approx\mathbf{0.26\ MB}$。
+> **full-vocab（精确 forward KL）**：需要整个词表分布，$[B,L,V]$，BF16 下 $8\times8192\times150000\times2\approx\mathbf{19.7\ GB}$。
+> 完全不是一个数量级 —— 这是蒸馏显存里最关键的区别，也是 reverse-KL OPD 工程友好的重要原因。
+
+**5.** 为什么不能把 rollout / teacher / training 的显存直接相加？峰值应该怎么写？
+
+> **答：** 要区分**逻辑组件**和**物理峰值**。on-policy OPD 一个 step 是分阶段的：Phase 1 rollout → Phase 2 teacher scoring → Phase 3 student training。
+> 如果 infra 做得好（engine sleep、free KV cache、offload/gather weights、分时复用 GPU），
+> $$M^{\text{peak}}=\max(M_{\text{rollout}},\ M_{\text{teacher}},\ M_{\text{training}})$$
+> 而不是三者相加。反过来，如果部署成三个独立 engine 占不同 GPU group，三者相加说的是**集群总资源**，不是单卡峰值。
+
+**6.** GRPO 和 PPO 各要几个模型？critic 为什么特别重？
+
+> **答：** **GRPO**：actor（训练）+ reference（冻结）+ rollout engine；rule-based reward 时不需要 RM。
+> **PPO**：actor（训练）+ **critic（训练）** + reference（冻结）+ reward model（冻结）+ rollout。
+> critic 特别重是因为它是一个**完整的训练态模型**，有 $P+G+O+A$ 全套，规模通常和 actor 相当 —— 等于把训练显存翻倍。
+
+**7.** $\pi_{\text{old}}$ 要不要常驻一份权重？工程上怎么做？
+
+> **答：** **不一定要。** rollout 时直接把 $\log\pi_{\text{old}}(a_t|s_t)$ 存下来，只有 $[B,L]$ 大小；训练时用 $r_t=\exp(\log\pi_\theta-\log\pi_{\text{old}})$ 即可。
+> 所以**逻辑上有 old policy，物理上不一定有第二份 actor 权重**。别把 GRPO 说成「actor + old actor + ref 三个完整模型」。
+

@@ -69,7 +69,23 @@ $$\boxed{GRPO/DAPO\rightarrow GSPO}\ \text{触碰更底层的问题：}$$
 
 ## 自测
 
-1. GSPO 质疑 GRPO 的什么？
-2. sequence-level ratio 怎么写？为什么要做长度归一化？
-3. GRPO 和 GSPO 的 clip 分别在什么粒度上做？
-4. 为什么说"把整条 sequence 当 action"更自然？
+**1.** GSPO 质疑 GRPO 的什么？
+
+> **答：** 质疑 **token-level importance ratio 本身是否合理**。
+> GRPO 的 advantage 是 sequence-level 的（整条 response 一个 $A$），但 ratio 和 clip 却是逐 token 做的。GSPO 认为既然奖励和 advantage 都定义在序列上，**重要性比也应该定义在序列上**，token-level ratio 会引入不必要的方差。
+
+**2.** sequence-level ratio 怎么写？为什么要做长度归一化？
+
+> **答：** $$s_i(\theta)=\left(\frac{\pi_\theta(y_i|x)}{\pi_{\text{old}}(y_i|x)}\right)^{1/|y_i|}=\exp\Big(\frac1{|y_i|}\sum_t\big[\log\pi_\theta(y_{i,t})-\log\pi_{\text{old}}(y_{i,t})\big]\Big)$$
+> 即**几何平均**。做长度归一化是因为整条序列的 log prob 之和随长度线性增长，不归一化的话长序列的 ratio 会指数级偏离 1，clip 区间对不同长度的序列含义完全不同，没法用统一的 $\epsilon$。
+
+**3.** GRPO 和 GSPO 的 clip 分别在什么粒度上做？
+
+> **答：** **GRPO 在 token 粒度**：每个 token 各自算 $r_t$、各自 clip，一条序列里可能一部分 token 被 clip、一部分没有。
+> **GSPO 在 sequence 粒度**：整条序列一个 $s_i$、一起 clip，要么整条被截断要么整条不被截断。
+
+**4.** 为什么说"把整条 sequence 当 action"更自然？
+
+> **答：** 因为在 LLM RL 里，**reward 是对整条 response 给的**，advantage 也是 sequence-level 的。既然优化目标的基本单位是序列，那么做 importance sampling 修正和 proximal 约束时，基本单位也应该是序列，这样 ratio 的分子分母才和 reward 的定义域一致。
+> token-level ratio 相当于把一个序列级的决策硬拆成 $|y|$ 个独立决策，引入了额外的方差。
+

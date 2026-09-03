@@ -163,9 +163,38 @@ $$\boxed{\theta \rightarrow \pi_\theta \rightarrow r \rightarrow L \rightarrow \
 
 ## 自测
 
-1. clip 和 importance ratio 各自解决什么问题？
-2. PPO 有没有硬约束 $r\le 1.2$？更新后 $r=2$ 可能吗？
-3. clip 是怎么让参数停止更新的？说出完整链条。
-4. 为什么不能只写 $\mathrm{clip}(r)A$？举一个具体反例。
-5. 默写四象限表，并对 $A=-1$、$r=0.5$ 和 $r=1.5$ 手算 min。
-6. PPO ratio clip 和 gradient clipping 有什么区别？
+**1.** clip 和 importance ratio 各自解决什么问题？
+
+> **答：** **importance ratio** 解决「数据来自旧分布」的**分布修正**问题，是第一性的。
+> **clip** 是顺手利用这个 ratio 来限制**单步更新幅度** —— ratio 偏离 1 太多说明 policy 已经走远，surrogate 不再可信，就把梯度收益截断掉。
+> 两者不是一回事：ratio 是必需的数学修正，clip 是可选的 proximal 机制（PPO-Penalty 用 KL 也能达到同样目的）。
+
+**2.** PPO 有没有硬约束 $r\le 1.2$？更新后 $r=2$ 可能吗？
+
+> **答：** **没有硬约束**，$r=2$ 完全可能。
+> PPO 是 **objective clipping** 而不是 parameter hard constraint：超出区间后只是不再提供继续推远的**梯度收益**，但并不阻止参数走到那里（比如一次大的 minibatch 更新，或者别的 token 的梯度把它带过去）。
+> TRPO 才是真的加约束 $D_{KL}(\pi_{\text{old}}\|\pi_\theta)\le\delta$。
+
+**3.** clip 是怎么让参数停止更新的？说出完整链条。
+
+> **答：** 链条：**$r$ 超出区间 → `clip(r)` 对 $r$ 的导数为 0 → 该项 loss 变成常数（对 $\theta$ 的梯度为 0）→ 这个 token 不再贡献梯度 → 参数不再因它而更新**。
+> 注意是「这个样本不再贡献梯度」，不是「参数被锁住」，别的样本照样推动参数。
+
+**4.** 为什么不能只写 $\mathrm{clip}(r)A$？举一个具体反例。
+
+> **答：** 只写 clip 会在「坏方向」上失去约束。反例：$A=-1$（坏 action），$r=0.5$（新 policy 已经把它压得很低）。
+> 此时 $\text{clip}(0.5,0.8,1.2)=0.8$，$\text{clip}(r)A=-0.8$；而 $rA=-0.5$。取 $\min$ 得 $-0.8$。
+> 如果只用 $\text{clip}(r)A=-0.8$，等于在已经压够了的方向上**继续给激励**。$\min$ 保证取「更悲观」的一侧，让已经走对方向的样本不再被过度推。
+
+**5.** 默写四象限表，并对 $A=-1$、$r=0.5$ 和 $r=1.5$ 手算 min。
+
+> **答：** 四象限：$A>0$ 时上界被 clip 住（不许过度提高），$A<0$ 时下界被 clip 住（不许过度压低）；在「回到区间内」的方向上不设限。
+> $A=-1,r=0.5$：$rA=-0.5$，$\text{clip}(r)A=0.8\times(-1)=-0.8$，$\min=-0.8$（**clip 生效**）。
+> $A=-1,r=1.5$：$rA=-1.5$，$\text{clip}(r)A=1.2\times(-1)=-1.2$，$\min=-1.5$（**取未裁剪的**，因为它更悲观 —— 这个方向要继续惩罚）。
+
+**6.** PPO ratio clip 和 gradient clipping 有什么区别？
+
+> **答：** **PPO ratio clip** 作用在 **objective** 上，裁的是 importance ratio，目的是限制 policy 相对 $\pi_{\text{old}}$ 的变化幅度，是算法的一部分。
+> **gradient clipping** 作用在 **梯度** 上，按 global L2 norm 等比例缩放，目的是防止偶发的梯度爆炸，是通用的训练保险丝，和 RL 无关。
+> 两者完全正交，通常同时使用。
+

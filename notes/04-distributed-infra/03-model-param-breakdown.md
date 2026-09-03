@@ -92,11 +92,36 @@ $$\boxed{\text{"多模态模型"不意味着 vision 参数占很多}}$$
 
 ## 自测（口述版）
 
-1. 写出一个 GLU expert 的参数量公式和整个 MoE 的参数量公式。
-2. 用 DeepSeek-V4-Flash 的 config 手算 MoE 参数量。
-3. Embedding + LM head 为什么要乘 2？什么时候不用乘 2？
-4. Kimi-K3 的 latent MoE 和普通 MoE 的区别？
-5. 从 2.8T total 推出 104B activated。
-6. 大 MoE 的显存由 total 还是 activated 决定？FLOPs 呢？这对并行选择意味着什么？
+**1.** 写出一个 GLU expert 的参数量公式和整个 MoE 的参数量公式。
 
-> 带答案的题库在 [显存 / 训练工程 / 分布式 自测](../03-training-fundamentals/self-test.md)。
+> **答：** 一个 GLU expert（gate/up/down 三个矩阵）：$P_{\text{expert}}\approx3\,d_{\text{model}}\,d_{\text{ffn}}$。
+> 整体：$P_{\text{MoE}}\approx3\,d\,d_{\text{ffn}}\times N_{\text{expert}}\times N_{\text{MoE layer}}$。恐怖的是后面这两个乘数。
+
+**2.** 用 DeepSeek-V4-Flash 的 config 手算 MoE 参数量。
+
+> **答：** $d=4096$、43 层、每层 256 routed + 1 shared expert、$d_{\text{ffn}}=2048$：
+> 一个 expert $3\times4096\times2048=25.17$M；
+> $25.17\text{M}\times257\times43\approx\mathbf{278.1B}$，占官方 284B 的 **97.8%**。
+
+**3.** Embedding + LM head 为什么要乘 2？什么时候不用乘 2？
+
+> **答：** `tie_word_embeddings=false` 时输入 embedding 和输出 LM head 是**两份独立矩阵**，$P=2Vd$。
+> tie 的时候共享一份，只有 $Vd$。DeepSeek-V4 系列是不 tie 的，算参数量时漏乘 2 是常见错误。
+
+**4.** Kimi-K3 的 latent MoE 和普通 MoE 的区别？
+
+> **答：** 普通 MoE 的 expert 直接吃 $d_{\text{model}}$ 维输入；Kimi 的 routed expert 先把 7168 压到 **3584 的 latent**，再进 expert，最后升回 7168（Stable LatentMoE）。
+> 这样一个 routed expert 只有 $3\times3584\times3072\approx33.03$M，比直接用 7168 省一半，是它能堆 896 个 expert 的原因之一。
+
+**5.** 从 2.8T total 推出 104B activated。
+
+> **答：** 每 token 只选 $16/896$ 个 routed expert：$2.723\text{T}\times\frac{16}{896}\approx48.6$B；
+> 再加 shared experts ~12.2B、latent projections ~4.7B、attention ~36.2B、dense FFN ~0.7B，合计 $\approx103$B，接近官方的 **104B activated**。
+> 同理 V4-Pro 1.6T→49B、V4-Flash 284B→13B。
+
+**6.** 大 MoE 的显存由 total 还是 activated 决定？FLOPs 呢？这对并行选择意味着什么？
+
+> **答：** **权重和 optimizer state 由 total params 决定；每 token 的 FFN FLOPs 由 activated params 决定。**
+> 所以 2.8T 的 MoE 训练不是「104B 模型的显存」。
+> 对并行的意义：约 98% 参数都是 expert，**EP 才是最关键的并行维度**（专门切这 98%）；TP 主要在处理那 1%–2% 的 dense attention / shared path 及其计算。
+

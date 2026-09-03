@@ -155,9 +155,35 @@ $\beta$ 就是这个折中的旋钮：$\beta\to1$ 时 $m\to p_T$，行为偏向 
 
 ## 自测（口述版）
 
-1. 写出熵、交叉熵、KL 三个定义，并当场推出 $H(q,p)=H(q)+D_{KL}(q\|p)$。
-2. 为什么说"最小化交叉熵就是在做 forward KL"？方向是哪个在前？
-3. one-hot label 时，CE 和 KL 是"等价"还是"相等"？为什么？
-4. 写出 softmax+CE 对 logits 的梯度，并用 $q=[1,0,0]$ 和 $q=[0.7,0.2,0.1]$ 各算一次，说明行为差别。
-5. 从 teacher 采样做 hard CE，和直接用 teacher 分布做 soft CE，是什么关系？谁方差小？
-6. 写出 JSD 的定义，解释为什么要引入 mixture $m$，以及它有界这件事从哪来。
+**1.** 写出熵、交叉熵、KL 三个定义，并当场推出 $H(q,p)=H(q)+D_{KL}(q\|p)$。
+
+> **答：** $H(q)=-\sum_v q\log q$；$H(q,p)=-\sum_v q\log p$；$D_{KL}(q\|p)=\sum_v q\log\frac qp$。
+> 推导：$H(q,p)=-\sum q\log p=-\sum q\log q+\sum q\log\frac qp=H(q)+D_{KL}(q\|p)$。
+> 语义：熵是用 $q$ 自己的最优编码编 $q$；交叉熵是数据来自 $q$ 却用 $p$ 的编码；KL 是多付出的那部分代价。
+
+**2.** 为什么说"最小化交叉熵就是在做 forward KL"？方向是哪个在前？
+
+> **答：** 训练时 $q$（label / teacher）是固定的，所以 $H(q)$ 是常数，于是 $\min_p H(q,p)\iff\min_p D_{KL}(q\|p)$。
+> 方向是 **$D_{KL}(q\|p)$：数据/teacher 在前，模型在后**，这正是 forward KL，所以任何「最小化交叉熵」的训练天然是 mode-covering 那一侧。
+
+**3.** one-hot label 时，CE 和 KL 是"等价"还是"相等"？为什么？
+
+> **答：** 是**相等**，不只是等价。因为 one-hot 分布的熵 $H(\delta_{y^*})=0$，恒等式退化成 $\text{CE}=0+D_{KL}(\delta_{y^*}\|\pi_\theta)$，两者数值完全一样，不差常数。
+
+**4.** 写出 softmax+CE 对 logits 的梯度，并用 $q=[1,0,0]$ 和 $q=[0.7,0.2,0.1]$ 各算一次，说明行为差别。
+
+> **答：** $\boxed{\frac{\partial L}{\partial z}=p-q}$，**hard 和 soft 通用**。设 $p=[0.4,0.3,0.3]$：
+> **hard** $q=[1,0,0]$：$p-q=[-0.6,\,0.3,\,0.3]$ → A 的 logit 上升、B/C 下降，**把所有概率往唯一 GT token 上压**。
+> **soft** $q=[0.7,0.2,0.1]$：$p-q=[-0.3,\,0.1,\,0.2]$ → A 上升、B 略降、C 降更多，目标是 $p\to q$（**拟合 teacher 的形状**）而不是 $p\to[1,0,0]$。
+
+**5.** 从 teacher 采样做 hard CE，和直接用 teacher 分布做 soft CE，是什么关系？谁方差小？
+
+> **答：** **期望相等**：$\mathbb E_{a\sim q}[-\log p(a)]=-\sum_v q(v)\log p(v)=H(q,p)$，所以采样版是 soft CE 的**无偏 Monte-Carlo 估计**。
+> **soft CE 方差更小**（把所有可能的 teacher sample 一次性平均掉了），但需要 teacher 的完整分布；采样版只需要 teacher 能生成，更便宜。
+
+**6.** 写出 JSD 的定义，解释为什么要引入 mixture $m$，以及它有界这件事从哪来。
+
+> **答：** $m=\beta p_T+(1-\beta)p_S$，$\mathrm{JSD}_\beta=\beta D_{KL}(p_T\|m)+(1-\beta)D_{KL}(p_S\|m)$。
+> 引入 $m$ 是因为两个 KL 都有「分母趋 0 就爆炸」的问题；混合后只要**有一边**有概率，$m$ 就不为 0：$p_S(v)=0$ 时 $\frac{p_T(v)}{m(v)}=2$，是有限的。
+> 有界正是从这里来：$\beta=0.5$、自然对数时 $0\le\mathrm{JSD}\le\ln2$，而且对称。**即使两个分布 support 完全不重叠也有限。**
+

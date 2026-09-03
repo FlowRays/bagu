@@ -118,12 +118,44 @@ $$\boxed{\text{计算复杂度仍是 }O(L^2)\text{，省的是显存和 HBM IO}}
 
 现在常见的是**混合**：大部分层用线性/稀疏，少数层保留 full attention 保证长程能力。Kimi K3 是 69 层 KDA + 24 层 Gated MLA（见 [参数构成](../04-distributed-infra/03-model-param-breakdown.md#3-为什么-activated-参数小这么多)）。
 
-## 自测
+## 自测（口述版）
 
-1. 为什么除 $\sqrt{d_h}$ 而不是 $d_h$？不除会怎样？
-2. causal mask 为什么必须在 softmax 之前？之后乘 0 错在哪？
-3. 算一遍 32K 上下文、32 层、32 头、$d_h=128$、BF16 的 KV cache 有多大。
-4. MHA / GQA / MQA 的区别？GQA 的 $W_K$ 和 $W_Q$ 形状有什么不同？广播用什么函数？
-5. MLA 压的是什么？为什么它和 RoPE 有冲突，怎么解决？
-6. attention sink 是什么现象？怎么解释？对滑动窗口有什么影响？
-7. FlashAttention 把什么从 $O(L^2)$ 降到 $O(L)$？什么没变？
+**1.** 为什么除 $\sqrt{d_h}$ 而不是 $d_h$？不除会怎样？
+
+> **答：** $q,k$ 各维独立、方差为 1 时 $q^\top k$ 的**方差**是 $d_h$、**标准差**是 $\sqrt{d_h}$。要把尺度拉回 1 就除标准差，不是除方差。
+> 不除的话 $d_h$ 一大 logits 尺度就大，softmax 饱和到接近 one-hot，梯度趋近 0。
+
+**2.** causal mask 为什么必须在 softmax 之前？之后乘 0 错在哪？
+
+> **答：** 要在 softmax **之前**填 $-\infty$，因为 $e^{-\infty}=0$，该位置权重恰好为 0 **且不进入分母**。
+> softmax 之后再乘 0 的话，分母里仍然算了被屏蔽位置的 $e^{s}$，剩下的权重就不再归一化到 1，结果是错的。
+
+**3.** 算一遍 32K 上下文、32 层、32 头、$d_h=128$、BF16 的 KV cache 有多大。
+
+> **答：** $M_{KV}=2\cdot B\cdot L\cdot N_{\text{layer}}\cdot h_{kv}\cdot d_h\cdot\text{bytes}$
+> $=2\times32768\times32\times32\times128\times2\ \text{B}\approx17.2$ GB（$B=1$）。
+> **比 7B 模型的权重（14 GB）还大**，这就是 MQA / GQA / MLA 存在的动机。
+
+**4.** MHA / GQA / MQA 的区别？GQA 的 $W_K$ 和 $W_Q$ 形状有什么不同？广播用什么函数？
+
+> **答：** Q 都是 $h$ 个头，区别在 $h_{kv}$：MHA $h_{kv}=h$、GQA $1<h_{kv}<h$、MQA $h_{kv}=1$，KV cache 分别是 $1\times$、$1/g$、$1/h$（$g=h/h_{kv}$）。GQA 质量几乎不掉、MQA 明显下降，所以 GQA 是现在的默认（典型 $h=32,h_{kv}=8$）。
+> $W_K,W_V$ 的输出维是 $h_{kv}d_h$，**比 $W_Q$ 窄**，这正是省 KV cache 的地方。
+> 广播回 $h$ 组必须用 `repeat_interleave`（AABBCC），不能用 `repeat`（ABCABC），用错了 head 和 KV 组就对不上。
+
+**5.** MLA 压的是什么？为什么它和 RoPE 有冲突，怎么解决？
+
+> **答：** 压的是 **KV 的维度**：$c=xW^{DKV}\in\mathbb R^{d_c}$，$K=cW^{UK}$、$V=cW^{UV}$，**cache 只存 $c$**，$d_c\ll 2hd_h$。推理时还能把 $W^{UK}$ 吸收进 $W_Q$，连升维都省了。
+> 冲突：旋转和低秩分解**不交换**，RoPE 不能直接作用在压缩后的 latent 上。解决办法是额外拆出一个**带 RoPE 的小分支**（decoupled RoPE），这是 MLA 实现上最绕的地方。
+> 对比：GQA 减头数，MLA 降维度。
+
+**6.** attention sink 是什么现象？怎么解释？对滑动窗口有什么影响？
+
+> **答：** 现象：训练好的模型里几乎所有 head 都会给序列**最开头的几个 token** 分配可观注意力，哪怕它们语义上毫无关系。
+> 解释：softmax 强制权重和为 1，当某个 query 其实「什么都不想关注」时需要一个地方倾倒概率质量，最靠前、所有 query 都能看到的位置就成了默认垃圾桶。
+> 影响：滑动窗口如果把开头几个 token 也滑出去，模型会直接崩。StreamingLLM 的做法是永久保留最前面几个 sink token + 一个滑动窗口；新模型则直接给 softmax 加一个可学习的 sink logit 从根上解决。
+
+**7.** FlashAttention 把什么从 $O(L^2)$ 降到 $O(L)$？什么没变？
+
+> **答：** 降的是**显存**：通过分块计算 + online softmax，不把完整的 $L\times L$ attention 矩阵写进 HBM。
+> **计算复杂度仍然是 $O(L^2)$**。它是 IO-aware 优化，不是算法复杂度优化。
+

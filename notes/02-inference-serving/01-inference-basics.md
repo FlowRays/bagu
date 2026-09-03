@@ -112,12 +112,41 @@ $$\boxed{\text{top-k 固定候选个数，top-p 固定累计概率质量}}$$
 
 优化点分别落在：排队（调度）、prefill（chunked prefill、prefix caching）、decode（batching、量化、投机解码）、显存（PagedAttention）。见 [服务化优化](02-serving-optimization.md)。
 
-## 自测
+## 自测（口述版）
 
-1. ⭐ prefill 和 decode 各是 compute-bound 还是 memory-bound？为什么？
-2. ⭐ 用算术强度解释 decode 为什么受带宽限制。7B BF16 在 2 TB/s 带宽上单步下限是多少？
-3. 为什么 batch 起来几乎免费？这是什么优化的理论基础？
-4. 没有 KV cache 的总复杂度是多少？有了之后新瓶颈是什么？
-5. ⭐ TTFT 和 TPOT 分别由哪个阶段决定？延迟和吞吐为什么矛盾？
-6. ⭐ top-k 和 top-p 的区别？为什么 top-p 通常更好？
-7. 采样各步的顺序是什么？推理任务和创作任务的参数取向有何不同？
+**1.** prefill 和 decode 各是 compute-bound 还是 memory-bound？为什么？
+
+> **答：** **prefill 是 compute-bound**：一次并行处理 $L$ 个 token，矩阵乘是真正的 GEMM，算力吃满。
+> **decode 是 memory-bound**：每次只处理 1 个 token，退化成 GEMV，但仍要把**整个模型权重**从 HBM 读一遍。
+> 这是整块内容的主线，所有优化都在打这两个之一。
+
+**2.** 用算术强度解释 decode 为什么受带宽限制。7B BF16 在 2 TB/s 带宽上单步下限是多少？
+
+> **答：** 算术强度 $=\frac{\text{FLOPs}}{\text{读取字节}}\approx\frac{2Nd\cdot1}{2N}=O(1)$，是常数级，说明受带宽而不是算力限制。
+> 7B BF16 权重 14 GB，$\frac{14\ \text{GB}}{2\ \text{TB/s}}=7$ ms —— **光把权重读一遍就要 7 ms**，这是单条序列 decode 的速度下限，和算力几乎无关。
+
+**3.** 为什么 batch 起来几乎免费？这是什么优化的理论基础？
+
+> **答：** batch=1 和 batch=32 读权重的次数一样（都是一遍），但产出的 token 数是 32 倍。所以 batch 越大吞吐越高。
+> 这正是 **continuous batching** 的理论基础。
+
+**4.** 没有 KV cache 的总复杂度是多少？有了之后新瓶颈是什么？
+
+> **答：** 没有 cache 时每步都要重新前向整个前缀，第 $t$ 步代价 $O(t^2)$，总代价 $O(N^3)$，完全不可用。
+> 有了之后新瓶颈变成**显存**：$M_{KV}=2BLN_{\text{layer}}h_{kv}d_h\cdot\text{bytes}$，32K 上下文可达 17 GB，比 7B 权重还大。能并发多少条请求 = 剩余显存 ÷ 单条 KV cache。
+
+**5.** TTFT 和 TPOT 分别由哪个阶段决定？延迟和吞吐为什么矛盾？
+
+> **答：** **TTFT 由 prefill 决定**（正比于 prompt 长度），**TPOT 由 decode 决定**（正比于权重大小/带宽）。端到端延迟 $=\text{TTFT}+\text{TPOT}\times(N_{\text{out}}-1)$。
+> 矛盾在于：增大 batch → 吞吐↑（权重只读一次摊给更多请求），但单条 TPOT↑（每步算得更多、KV 读得更多）。**对话产品优化 TTFT/TPOT，离线批处理优化吞吐**，面试先反问场景。
+
+**6.** top-k 和 top-p 的区别？为什么 top-p 通常更好？
+
+> **答：** top-k 固定**候选个数**；top-p（nucleus）按概率降序累加到 $\ge p$，固定**累计概率质量**、候选数自适应。
+> top-p 更好是因为：模型很确定时 top-k 仍强行留 $k$ 个候选可能引入噪声，top-p 会自动收缩到 1–2 个；分布平坦时 top-p 又能放开。min-p 用相对阈值 $p_i\ge p_{\min}p_{\max}$，比 top-p 更稳。
+
+**7.** 采样各步的顺序是什么？推理任务和创作任务的参数取向有何不同？
+
+> **答：** 顺序：`repetition penalty → temperature → top-k → top-p → 采样`。
+> 推理/数学任务用小 $T$ 甚至 greedy 求确定性和正确率；创作任务用较大 $T$ + top-p；RL rollout 通常 $T\ge1$ 保证探索多样性。
+

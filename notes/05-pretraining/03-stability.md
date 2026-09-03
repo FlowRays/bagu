@@ -76,12 +76,42 @@ $$\boxed{\text{在小模型上调超参，直接迁移到大模型，省掉大�
 | **各 expert 的负载**（MoE） | 检测负载不均和 expert collapse |
 | **token 消耗速度** | 数据管线是否成为瓶颈 |
 
-## 自测
+## 自测（口述版）
 
-1. ⭐ loss spike 的常见原因？五种应对手段？为什么监控 grad norm 比 loss 更好？
-2. ⭐ 为什么用 BF16 而不是 FP16？代价是什么？哪些地方必须用 FP32？
-3. 残差分支的初始化为什么要额外缩放 $1/\sqrt{2N_{\text{layer}}}$？
-4. ⭐ 为什么必须 warmup？用 Adam 的二阶动量解释。
-5. WSD schedule 是什么？两个好处？
-6. ⭐ muP 解决什么问题？
-7. 大规模训练该监控哪些指标？MoE 要额外看什么？
+**1.** loss spike 的常见原因？五种应对手段？为什么监控 grad norm 比 loss 更好？
+
+> **答：** 原因：脏数据（超长重复串、乱码）、**attention logits 爆炸**、梯度爆炸、数值溢出、lr 过大或 warmup 太短。
+> 应对：① gradient clipping（global norm，最基本的保险丝）；② QK-norm 锁住 attention logits 尺度；③ 用 BF16 而不是 FP16；④ 检测到异常就跳过该 batch；⑤ 从最近的健康 checkpoint 回滚并跳过引发 spike 的数据段。
+> **grad norm 在崩之前就会先飙升**，比 loss 更早暴露问题。
+
+**2.** 为什么用 BF16 而不是 FP16？代价是什么？哪些地方必须用 FP32？
+
+> **答：** BF16 的 exponent 是 8 位（和 FP32 一样），**动态范围大、几乎不会溢出**；FP16 只有 5 位，训练大模型经常要配 loss scaling 才不溢出。
+> 代价是 BF16 尾数只有 7 位、**精度低**。
+> 必须用 FP32 的地方：optimizer state（Adam 的 $m,v$）、master weight、loss 累加、norm 的统计量。
+
+**3.** 残差分支的初始化为什么要额外缩放 $1/\sqrt{2N_{\text{layer}}}$？
+
+> **答：** 因为 residual stream 是逐层**累加**的：$x_L=x_0+\sum_l\text{Sublayer}_l$。若每层输出方差都是 1，累加 $N$ 层后方差会随深度线性增长。
+> 把残差分支的输出投影缩放 $1/\sqrt{2N_{\text{layer}}}$，可以让累加后的方差不随深度增长，深层网络才训得稳。
+
+**4.** 为什么必须 warmup？用 Adam 的二阶动量解释。
+
+> **答：** 训练最开始 Adam 的二阶动量 $v$ 估计还不准（$v\approx0$），导致更新量 $m/\sqrt{v}$ 非常大。此时若直接用峰值 lr，一步就能毁掉初始化。
+> warmup 用很小的 lr 走一段，等 $m,v$ 的统计量稳定下来再升到峰值。典型 warmup 是总步数的 1%–3%。
+
+**5.** WSD schedule 是什么？两个好处？
+
+> **答：** **Warmup-Stable-Decay**：warmup → 长时间**恒定 lr** → 最后快速衰减。
+> 好处：① 恒定段可以**随时加长**，不用预先确定总步数（cosine 必须一开始就定好）；② 衰减段正好配合**数据退火**，在低 lr 时喂高质量数据，两者叠加收益最大。
+
+**6.** muP 解决什么问题？
+
+> **答：** 解决「小模型上调好的超参（尤其 lr）换到大模型上不再最优，每换一次规模都要重调」的问题。
+> **muP（Maximal Update Parametrization）** 重新设计初始化和 lr 随宽度的缩放规则，使**最优超参在不同宽度下保持不变**，于是可以在小模型上调好直接迁移到大模型，省掉极贵的大规模超参搜索。
+
+**7.** 大规模训练该监控哪些指标？MoE 要额外看什么？
+
+> **答：** loss（平滑下降无尖峰）、**grad norm**（发散前兆）、lr（确认 schedule）、激活/logits 的最大值（数值爆炸）、MFU（性能问题）、token 消耗速度（数据管线瓶颈）。
+> MoE 还要额外看**各 expert 的负载分布**，检测负载不均和 expert collapse。
+

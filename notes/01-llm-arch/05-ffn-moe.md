@@ -131,13 +131,45 @@ $$\boxed{\text{TP 的典型通信是 All-Reduce；EP 的典型通信是 All-to-A
 **Q：为什么要 shared expert？**
 让通用能力集中在 shared expert 上，routed expert 就能更专业化，减少不同 expert 重复学同样的基础能力。
 
-## 自测
+## 自测（口述版）
 
-1. Attention 和 FFN 的分工是什么？为什么说 FFN 是 position-wise 的？
-2. 写出 SwiGLU 的公式，指出哪个分支过激活。推导为什么 $d_{ff}=\frac83d$。
-3. 写出 MoE 的前向公式。routed expert 和 shared expert 的区别？
-4. 写出 auxiliary load balancing loss，解释 $f_j$ 和 $P_j$。它的缺点是什么？
-5. aux-loss-free balancing 怎么做？bias 加在哪一步、不加在哪一步？
-6. MoE 的显存按 total 还是 activated 算？FLOPs 呢？
-7. expert capacity 超了会怎样？这为什么会影响训练效果？
-8. EP 的典型通信是什么？为什么不是 All-Reduce？
+**1.** Attention 和 FFN 的分工是什么？为什么说 FFN 是 position-wise 的？
+
+> **答：** Attention 负责 token **之间**交换信息，FFN 负责在**每个 token 内部**把拿到的信息做非线性加工。
+> FFN 对每个位置独立作用、不看别的 token，所以叫 position-wise。Dense 模型里绝大部分参数都在 FFN。
+
+**2.** 写出 SwiGLU 的公式，指出哪个分支过激活。推导为什么 $d_{ff}=\frac83d$。
+
+> **答：** $\text{SwiGLU}(x)=\big(\text{SiLU}(xW_{\text{gate}})\odot(xW_{\text{up}})\big)W_{\text{down}}$，**只有 gate 分支过 SiLU**，up 分支不过。
+> 推导：普通 FFN 两个矩阵 $2dd_{ff}=8d^2$（$d_{ff}=4d$）；SwiGLU 三个矩阵 $3dd_{ff}$。令两者相等：$3dd_{ff}=8d^2\Rightarrow d_{ff}=\frac83d$。
+
+**3.** 写出 MoE 的前向公式。routed expert 和 shared expert 的区别？
+
+> **答：** $y=\sum_{j\in\text{TopK}}p_j E_j(x)$，其中 $p=\text{softmax}(\text{router}(x))$。
+> **routed expert** 由 router 动态选中，每个 token 只走 $k$ 个；**shared expert 每个 token 都走**，用来承载通用能力，让 routed expert 专注差异化，避免每个 expert 都重复学基础能力。
+
+**4.** 写出 auxiliary load balancing loss，解释 $f_j$ 和 $P_j$。它的缺点是什么？
+
+> **答：** $\mathcal L_{\text{aux}}=\alpha\,N\sum_{j=1}^N f_j P_j$。$f_j$ 是实际被分到 expert $j$ 的 token **比例**，$P_j$ 是 router 给它的**平均概率**；两者都均匀时该项最小，乘 $N$ 是为了让最优值与 $N$ 无关。
+> 缺点：它是一个和主任务无关的额外 loss，$\alpha$ 太大伤效果、太小不起作用。
+
+**5.** aux-loss-free balancing 怎么做？bias 加在哪一步、不加在哪一步？
+
+> **答：** 给每个 expert 的 router 分数加一个可学习 bias $b_j$，**只用于 top-k 选择**（$\text{TopK}(s_j+b_j)$），**不进入最终的加权**（加权仍用 $s_j$）。训练中动态调整：过载就调低 $b_j$、欠载就调高。
+> 好处是把负载均衡从「额外 loss」变成「路由时的偏置调节」，不污染主目标。
+
+**6.** MoE 的显存按 total 还是 activated 算？FLOPs 呢？
+
+> **答：** **权重和 optimizer state 由 total params 决定；每 token 的 FFN FLOPs 由 activated params 决定。**
+> 所以 2.8T 的 MoE 训练不是「104B 模型的显存」，那 2.8T 参数和对应的 Adam 状态都得存下来。MoE 换的是「同样算力下更大的容量」，不是省显存。
+
+**7.** expert capacity 超了会怎样？这为什么会影响训练效果？
+
+> **答：** 超出容量的 token 会被**丢弃**（直接走 residual 跳过 FFN）。
+> 重要性在于：EP 本身是数学等价的并行方式，但 **token dropping 会真的改变训练**，是少数几个真正会影响效果的因素之一。
+
+**8.** EP 的典型通信是什么？为什么不是 All-Reduce？
+
+> **答：** 是 **All-to-All**（dispatch 一次、combine 一次）。
+> 因为不同 expert 在不同 GPU 上，token 需要按 routing 结果**点对点重新分布**，而不是「所有卡算同一件事再规约」，所以是 All-to-All 而非 All-Reduce。
+

@@ -183,11 +183,67 @@ $$\text{GKD / earlier OPD}\rightarrow\text{Thinking Machines OPD}\rightarrow\box
 
 ## 自测（口述版）
 
-1. 写出 OPSD 的 student / teacher 两个条件分布，指出 teacher 的优势来源和 OPD 有什么本质不同。
-2. 为什么同一个模型能教自己？如果不给 GT 会怎样？
-3. 用 $2x+3=7$ 的例子，把 student 和 teacher 的实际 context 各写一遍。
-4. teacher 看到 GT 后会不会只是照抄 GT？为什么公式必须写成 $p_T(\cdot|x,y^*,\hat y_{<t})$？
-5. OPSD 训练时 teacher 是实时跟着 student 更新的吗？为什么？
-6. 论文主实验用的是 forward KL 还是 reverse KL？这和"OPD 是 reverse KL"矛盾吗？
-7. full-vocabulary 和 sampled-token 两个 objective 的取舍是什么？
-8. OPSD 是第一个提出 self-distillation 的工作吗？它真正的新意是什么？
+**1.** 写出 OPSD 的 student / teacher 两个条件分布，指出 teacher 的优势来源和 OPD 有什么本质不同。
+
+> **答：** $\text{Student}: p_S(\cdot\mid x)$，$\text{Teacher}: p_T(\cdot\mid x,\ y^*)$ —— **同一个模型、不同 context**，teacher 额外看到 GT solution。
+> 本质不同：**OPD 是能力优势**（7B ← 72B，teacher 模型更强）；**OPSD 是信息优势**（privileged information，teacher 本身未必更强，只是多看了答案）。这才是 privileged information 最准确的含义。
+
+**2.** 为什么同一个模型能教自己？如果不给 GT 会怎样？
+
+> **答：** 因为 $p_\theta(\cdot|x)\ne p_\theta(\cdot|x,y^*)$ —— 同一个模型，**信息不同**。利用的现象是「**知道正确答案后解释应该怎么推，比完全不知道答案时自己找出来容易得多**」。论文把这个过程叫 implicit rationalization。
+> 不给 GT 的话 teacher 就是 $p_\theta(\cdot|x,\hat y_{<t})$，和 student 完全一样，**没有任何额外信息，训练信号为 0**。
+
+**3.** 用 $2x+3=7$ 的例子，把 student 和 teacher 的实际 context 各写一遍。
+
+> **答：** **Student**（只有题目 + 自己已写的部分）：
+> ```text
+> Solve: 2x + 3 = 7
+>
+> We subtract 3 from both sides.
+> 2x = 4.
+> Then x =
+> ```
+> **Teacher**（多塞一份 GT）：
+> ```text
+> Problem:
+> Solve: 2x + 3 = 7
+>
+> Reference solution:
+> 2x = 4
+> Therefore x = 2
+>
+> Student attempt:
+> We subtract 3 from both sides.
+> 2x = 4.
+> Then x =
+> ```
+> 关键：**teacher 不继续 generate**，只做一次 forward 取该位置的 next-token 分布。
+
+**4.** teacher 看到 GT 后会不会只是照抄 GT？为什么公式必须写成 $p_T(\cdot|x,y^*,\hat y_{<t})$？
+
+> **答：** **不会。** 因为它算的是 $p_T(\cdot|x,y^*,\hat y_{<t})$ 而不是 $p_T(\cdot|x,y^*)$ —— **三样都给**：题目、GT、**student 当前 prefix**。
+> 例：GT 是 `2x=4 → x=2`，但 student 写成 `2x = 10. Therefore ...`。照抄 GT 就该输出 `2x = 4`，可接在这个 prefix 后面语言上都不自然。teacher 实际会倾向 `however` / `this is incorrect` / `we made an error` 再修正。
+> 这叫 **GT-aware trajectory correction**，不是 GT imitation。
+
+**5.** OPSD 训练时 teacher 是实时跟着 student 更新的吗？为什么？
+
+> **答：** **不是。** teacher branch 做 **stop-gradient**，而且**固定在 initial policy snapshot**，student 持续更新、teacher 不动。这是为了训练稳定（否则 teacher 和 student 一起漂移，信号会退化）。
+> 所以准确说法是「**同源模型、不同 context**」，而不是「实时的自己」。
+
+**6.** 论文主实验用的是 forward KL 还是 reverse KL？这和"OPD 是 reverse KL"矛盾吗？
+
+> **答：** **forward KL。** 论文 §4.3.1 的消融（Qwen3-1.7B / AIME25）：forward KL 36.7 → **43.9**（step 50）；reverse KL 只有 37.5；JSD 36.9。作者写 “We therefore adopt forward KL in all remaining experiments.”
+> **不矛盾，恰恰证明 on-policy 和 forward/reverse KL 是正交的**：OPSD = on-policy prefix + full-vocab **forward** KL。把 Thinking Machines 的 sampled-token reverse-KL recipe 当成「OPD 的定义」才是错的 —— 它在 OPSD 论文里是被当作 *alternative objective* 讨论的。
+
+**7.** full-vocabulary 和 sampled-token 两个 objective 的取舍是什么？
+
+> **答：** **full-vocabulary**（主 recipe）：逐词表算 forward KL + per-entry clipping，监督最 dense、梯度方差最低，**效果更好**；代价是要保存 vocab-sized logits，**peak memory 更高**。
+> **sampled-token**（policy-gradient 版）：只需 $[B,L]$ 的标量 logprob，极便宜，但监督稀疏、方差大。
+> 论文结论是 full-vocab > sampled-token，是一个明确的 **performance–memory tradeoff**。
+
+**8.** OPSD 是第一个提出 self-distillation 的工作吗？它真正的新意是什么？
+
+> **答：** **不是。** learning with privileged information、teacher-privileged distillation、各种 LLM self-training 都更早（2025 年就有明确叫 Teacher Privileged Distillation 的工作）。
+> 它真正新的是这个**组合**：**same model + privileged teacher context + student on-policy rollout + token-level distribution distillation**，并正式命名为 OPSD（Zhao et al., 2026-01）。
+> 时间线：GKD → Thinking Machines OPD → **OPSD (2026-01)** → Rethinking OPSD (2026-07) → U-OPSD (2026-08，进一步去掉 GT supervision)。
+

@@ -192,13 +192,51 @@ $$\boxed{\text{牺牲更细粒度的 value estimation，换更简单、更便宜
 
 > ⚠️ 实践提醒：verl 里看到 `adv_estimator=grpo` **不代表**严格是原版 DeepSeekMath GRPO，因为你可能同时开了 asymmetric clip、dynamic sampling、token-level loss、overlong filtering，实际已经是 **DAPO-style GRPO**。
 
-## 自测（口述版）
+## 自测
 
-1. 一分钟讲清 GRPO 的原理和训练方式。
-2. GRPO 的 advantage 怎么算？为什么可以不用 critic？
-3. 为什么除标准差而不是方差？如果 reward 整体放大 10 倍会怎样？
-4. 一条 response 的 sequence-level advantage 是怎么作用到每个 token 上的？推导一遍。
-5. 为什么必须同 prompt 分组？举一个难易两道题的例子。
-6. GRPO 相对 PPO 的收益和代价各是什么？
-7. GRPO 解决 credit assignment 了吗？
-8. $\pi_{old}$ 和 $\pi_{ref}$ 在 GRPO 里分别起什么作用？两种"不要走太远"的时间尺度有什么不同？
+**1.** 一分钟讲清 GRPO 的原理和训练方式。
+
+> **答：** GRPO 的核心是**用同一个 prompt 采样一组 response，用组内的相对好坏代替 critic**。
+> 对一个 prompt 采 $G$ 条 rollout，各自拿到 reward $R_i$，把它们标准化成 $A_i=\frac{R_i-\mu}{\sigma}$ 当作整条序列的 advantage，再广播到该序列的每个 token 上，走和 PPO 一样的 ratio + clip + min。
+> 这样就**去掉了 critic**：省一个和 actor 同规模的训练模型、省它的显存和调参，代价是需要每个 prompt 多采几条、rollout 成本上升。
+
+**2.** GRPO 的 advantage 怎么算？为什么可以不用 critic？
+
+> **答：** $A_i=\frac{R_i-\text{mean}(R)}{\text{std}(R)+\epsilon}$，$R$ 是同一 prompt 的 $G$ 条 rollout 的 reward。
+> 不用 critic 是因为 **critic 的唯一作用就是提供 baseline**（回答「这个状态平均能拿多少分」）。同一个 prompt 的其他 rollout 的平均 reward 就是这个 baseline 的一个**无偏蒙特卡洛估计**，直接用它就够了。
+
+**3.** 为什么除标准差而不是方差？如果 reward 整体放大 10 倍会怎样？
+
+> **答：** 因为要的是**尺度不变性**：advantage 应该和 reward 的量纲无关。
+>  reward 放大 10 倍时，$R_i-\mu$ 放大 10 倍，$\sigma$ 也放大 10 倍，除完 $A$ 不变 —— 这正是我们要的。
+> 如果除方差（$\sigma^2$），分母放大 100 倍，$A$ 反而缩小 10 倍，尺度就不对了。
+
+**4.** 一条 response 的 sequence-level advantage 是怎么作用到每个 token 上的？推导一遍。
+
+> **答：** 序列的 log prob 是各 token 的和：$\log\pi(y|x)=\sum_t\log\pi(y_t|x,y_{<t})$。
+> 于是序列级 policy gradient
+> $$A\cdot\nabla\log\pi(y|x)=A\cdot\sum_t\nabla\log\pi(y_t|\cdot)=\sum_t\big[A\cdot\nabla\log\pi(y_t|\cdot)\big]$$
+> **这是分解不是替换**：把同一个 $A$ 乘到每个 token 上，加起来恰好等于序列级的梯度。所以「广播 advantage」在数学上是严格的。
+
+**5.** 为什么必须同 prompt 分组？举一个难易两道题的例子。
+
+> **答：** 因为 baseline 必须是「**同一个状态下**的平均水平」。
+> 例：简单题所有 rollout 都能拿 1 分，难题都拿 0 分。若在整个 batch 上归一化，简单题的 rollout 全是正 advantage、难题全是负的 —— 模型学到的是「简单题好、难题坏」，而不是「这条回答比那条好」。
+> 同 prompt 分组后，简单题组内 $R$ 全是 1，$\mu=1$、$A$ 全为 0，不产生梯度（这正是 DAPO 要修的问题）；难题同理。只有组内**有差异**时才产生有意义的学习信号。
+
+**6.** GRPO 相对 PPO 的收益和代价各是什么？
+
+> **答：** **收益**：去掉 critic —— 少一个和 actor 同规模的训练模型（$P+G+O+A$ 全省），显存大幅下降、少一套超参、不用担心 critic 训不准带来的偏差。
+> **代价**：每个 prompt 要采 $G$ 条 rollout，**rollout 成本上升 $G$ 倍**；advantage 是 sequence-level 的，比 GAE 的逐 token 估计更粗；组内 reward 全同时会白采一批。
+
+**7.** GRPO 解决 credit assignment 了吗？
+
+> **答：** **没有。** 它给整条 response 一个统一的 advantage，广播到每个 token，等于说「这条回答里所有 token 一样好/一样坏」。
+> 实际上一条长 CoT 里可能只有某几步是关键错误，GRPO 无法区分。这正是 dense supervision（如 [OPD](../distill/00-map.md)、过程奖励 PRM）想解决的问题。
+
+**8.** $\pi_{old}$ 和 $\pi_{ref}$ 在 GRPO 里分别起什么作用？两种"不要走太远"的时间尺度有什么不同？
+
+> **答：** $\pi_{\text{old}}$ 用于 importance ratio $r=\pi_\theta/\pi_{\text{old}}$ 和 clip，管的是「**这一步别走太远**」，尺度是**一次 rollout 之内**（局部）。
+> $\pi_{\text{ref}}$ 用于 KL penalty，管的是「**整个训练别跑离初心太远**」，尺度是**全程**（全局锚点）。
+> 前者每轮 rollout 都更新，后者训练全程冻结。
+

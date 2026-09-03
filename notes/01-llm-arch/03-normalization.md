@@ -98,11 +98,37 @@ $$\boxed{\text{QK-norm 治的是 attention logits 爆炸导致的训练不稳，
 - 有研究发现去掉 bias 对效果没有损失，甚至训练更稳
 - 少一个需要同步的张量，分布式实现更简单
 
-## 自测
+## 自测（口述版）
 
-1. 写出 LayerNorm 和 RMSNorm 的公式，指出两处差别。
-2. LLM 为什么不用 BatchNorm？说出三条。
-3. 写出 pre-norm 和 post-norm 的公式。为什么 pre-norm 更好训？用展开式解释。
-4. residual stream 是什么视角？它能解释哪几件事？
-5. QK-norm 解决什么问题？加在哪一步？
-6. 为什么现代 LLM 普遍去掉 bias？
+**1.** 写出 LayerNorm 和 RMSNorm 的公式，指出两处差别。
+
+> **答：** $\text{LN}:\ \gamma\frac{x-\mu}{\sqrt{\sigma^2+\epsilon}}+\beta$，$\text{RMSNorm}:\ \gamma\frac{x}{\sqrt{\frac1d\sum_i x_i^2+\epsilon}}$。
+> 两处差别：RMSNorm **不减均值**、**没有 $\beta$**。省一次求均值、一个参数、一次减法，实践中效果基本不掉，所以 LLaMA 之后基本都用它。
+
+**2.** LLM 为什么不用 BatchNorm？说出三条。
+
+> **答：** ① **推理时 batch 和 seq 长度一直在变**，BatchNorm 依赖 batch 内统计量，batch=1 时方差没有意义，训练/推理行为不一致；
+> ② **语义不对**：BatchNorm 是「跨样本比较同一个 feature」，LayerNorm 是「在一个样本内部比较所有 feature」，语言模型每个 token 是独立语义单元，后者才合理；
+> ③ 变长序列的 **padding 会污染** batch 统计量。
+
+**3.** 写出 pre-norm 和 post-norm 的公式。为什么 pre-norm 更好训？用展开式解释。
+
+> **答：** post-norm：$x\leftarrow\text{LN}(x+\text{Sublayer}(x))$；pre-norm：$x\leftarrow x+\text{Sublayer}(\text{LN}(x))$。
+> pre-norm 展开是 $x_L=x_0+\sum_l\text{Sublayer}_l(\text{LN}(x_l))$，**存在一条从输入到输出完全不被 norm 阻断的恒等路径**，梯度可以直接流回浅层。post-norm 每层输出都被 LN 重新标定，深层网络里梯度尺度容易失控，需要很小心的 warmup。
+> 代价是 pre-norm 最终效果可能略差一点，折中方案有 sandwich norm。
+
+**4.** residual stream 是什么视角？它能解释哪几件事？
+
+> **答：** 把网络看成一条贯穿全程的「主干道」，每一层只是往上面**加**自己的贡献，而不是替换：$x_L=x_0+\sum_l\text{Sublayer}_l$。
+> 能解释：① layer pruning / early exit 为什么可行（删几层只是少加几项）；② DeepStack 为什么能把视觉特征直接加进 LLM 前几层 hidden state；③ LoRA 为什么有效（在主干道上加一个低秩增量）。
+
+**5.** QK-norm 解决什么问题？加在哪一步？
+
+> **答：** 训练后期 $q,k$ 的范数变大，导致 $q^\top k/\sqrt{d_h}$ 数值过大 → softmax 饱和 → 梯度消失，或直接 loss spike。
+> 做法是在**算 attention 之前**分别对 $q,k$ 做一次 RMSNorm（按 head 维），把 attention logits 的尺度锁住。
+> 它**治的是训练稳定性，不是为了提效果**。
+
+**6.** 为什么现代 LLM 普遍去掉 bias？
+
+> **答：** 省一点参数和显存；实验发现去掉不掉点甚至训练更稳；少一个需要同步的张量，分布式实现更简单。（LLaMA 系全去，Qwen 保留了 QKV 的 bias。）
+

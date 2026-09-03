@@ -103,8 +103,31 @@ $$\boxed{\text{SFT 学"老师遇到的状态"；OPD 学"自己真正会遇到的
 
 ## 自测（口述版）
 
-1. 写出 SFT 的 loss，指出哪一项是 exposure bias 的根源。
-2. 证明 one-hot 情况下 $L_{\text{SFT}}=D_{KL}(\delta_{y^*}\|\pi_\theta)$ 是**相等**而不只是等价。
-3. 用 $17\times6$ 的例子解释 exposure bias。
-4. "从 teacher 采样做 SFT" 和 "用 teacher 分布做 soft CE" 是什么关系？写出期望推导。
-5. 传统 logit KD 和 SFT 的差别在哪一个维度上？和 OPD 的差别又在哪一个维度上？
+**1.** 写出 SFT 的 loss，指出哪一项是 exposure bias 的根源。
+
+> **答：** $$L_{\text{SFT}}=-\sum_t\log\pi_\theta\big(y_t^*\mid x,\ y^*_{<t}\big)$$
+> 根源是条件 prefix **$y^*_{<t}$** —— 训练时永远喂 GT 的正确历史（teacher forcing），模型从没见过「自己前面走错之后」的状态。
+
+**2.** 证明 one-hot 情况下 $L_{\text{SFT}}=D_{KL}(\delta_{y^*}\|\pi_\theta)$ 是**相等**而不只是等价。
+
+> **答：** 每个位置 label 是 one-hot 分布 $q=\delta_{y_t^*}$，$L_t=-\sum_v q(v)\log\pi_\theta(v)=H(q,\pi_\theta)$。
+> 由 $H(q,p)=H(q)+D_{KL}(q\|p)$ 且 **one-hot 的熵 $H(\delta)=0$**，得 $L_t=D_{KL}(\delta_{y^*}\|\pi_\theta)$，数值上严格相等（不差任何常数）。
+
+**3.** 用 $17\times6$ 的例子解释 exposure bias。
+
+> **答：** GT trajectory 是 `17 × 6 = 102`，SFT 训练时看到的 prefix 永远是 `17 × 6 =`，然后要求输出 `102`。
+> 但推理时 student 可能自己生成 `17 × 6 = 96, therefore ...`，此刻它处在状态 $s=$ `17 × 6 = 96, therefore` —— 这个状态**在 SFT 数据里从来没出现过**，模型根本没学过「我前面已经犯错了，现在怎么办」。
+> 这就是 train-test distribution mismatch，也是 OPD 要解决的核心问题。
+
+**4.** "从 teacher 采样做 SFT" 和 "用 teacher 分布做 soft CE" 是什么关系？写出期望推导。
+
+> **答：** **期望下是同一个目标。** teacher 在状态 $s$ 有分布 $q(a)=\pi_T(a|s)$，从中采样 $a\sim q$ 再做普通 SFT $L=-\log p_\theta(a)$，取期望：
+> $$\mathbb E_{a\sim q}[-\log p_\theta(a)]=-\sum_a q(a)\log p_\theta(a)=H(q,p)=H(q)+D_{KL}(q\|p)$$
+> 所以「**teacher 生成数据 + SFT ≈ Monte-Carlo forward-KL distillation**」，采样只是 teacher distribution 的无偏估计，区别只在方差和成本。
+
+**5.** 传统 logit KD 和 SFT 的差别在哪一个维度上？和 OPD 的差别又在哪一个维度上？
+
+> **答：** **logit KD vs SFT：差在 target 这个维度** —— prefix 都来自 teacher/dataset，但一个用 teacher 的完整 soft 分布，一个用 one-hot hard token（SFT 是它的 hard-label 特例）。
+> **KD/SFT vs OPD：差在 state distribution 这个维度** —— prefix 一个来自 teacher/dataset，一个来自 student 自己 rollout。
+> 一句话：**SFT 学「老师遇到的状态」，OPD 学「自己真正会遇到的状态」。**
+

@@ -95,9 +95,36 @@ DeepSeek-V4-Flash 的 LLM attention 有 **128-token sliding window**，但一张
 
 ## 自测（口述版）
 
-1. $1024\times1024$、patch=14 会产生多少 patch？为什么不能直接送 LLM？
-2. 四类压缩方法各是什么？各自的优缺点？
-3. 为什么是 concat + MLP 而不是 average pooling？代价是什么？
-4. DeepSeek-V4-Flash-Vision 的 aligner 怎么算？参数量多少？
-5. 它是先生成海量 ViT token 再压到 384 吗？两层控制分别是什么？
-6. 384 个 image token 遇上 128-token sliding window 会怎样？它怎么解决？
+**1.** $1024\times1024$、patch=14 会产生多少 patch？为什么不能直接送 LLM？
+
+> **答：** $1024/14\approx73$，$73\times73\approx\mathbf{5329}$ 个 patch。
+> 直接送 LLM 会让 context 多 5300 token，而 attention 是 $O((N_t+N_v)^2)$，视频再乘帧数直接爆炸。所以 **ViT 内部可以保留较密的 token，但送进 LLM 前必须压缩**。
+
+**2.** 四类压缩方法各是什么？各自的优缺点？
+
+> **答：** ① **spatial merge / pixel shuffle**（Qwen $2\times2$，$N\to N/4$）：简单、保空间信息；
+> ② **更激进的 spatial pooling**（DeepSeek $3\times3$，$N\to N/9$）：压缩比高，通常还配死 token budget；
+> ③ **learned resampler**（Q-Former / Perceiver，固定 $M$ 个 learnable query 做 cross-attention）：预算固定，缺点是容易丢 dense spatial information；
+> ④ **token selection / pruning**（按 attention score / saliency / similarity / text-query relevance 留 $K$ 个）：动态，视频场景尤其重要。
+
+**3.** 为什么是 concat + MLP 而不是 average pooling？代价是什么？
+
+> **答：** 平均池化把 4 个 patch 的**空间信息抹平**了（谁在左上、谁在右下都一样）；concat 保留了 $2\times2$ 内部的相对位置，MLP 可以学怎么融合。
+> 代价是 projector 参数从「很小」涨到 40–50M。大家宁愿付这个参数，正说明空间信息值这个钱。
+
+**4.** DeepSeek-V4-Flash-Vision 的 aligner 怎么算？参数量多少？
+
+> **答：** $9\times1024=9216\to4096\to4096$，$h=W_2\,\text{GELU}(W_1[z_1;\dots;z_9])$，即 **9 个 ViT token → 1 个 LLM token**。
+> 参数：$37.75+16.78=\mathbf{54.53M}$，加 ViT 的 411.84M 共约 **466M**。
+> ViT 本身是 32 层、hidden 1024、16 heads、FFN 2816、patch 14、2D RoPE，内部是 **full bidirectional attention**（不是 causal）。
+
+**5.** 它是先生成海量 ViT token 再压到 384 吗？两层控制分别是什么？
+
+> **答：** **不是。** 有**两层控制**：① `vision_max_n_token = 384` 卡死每张图的 LLM token 预算；② **预处理阶段**就根据 patch=14、downsample=3、max=384 **反推允许的 resize 分辨率**。
+> 流程：`raw image → 按长宽比动态 resize → patch=14 → 32-layer ViT → 3×3 merge → ≤384-token block → LLM`。
+
+**6.** 384 个 image token 遇上 128-token sliding window 会怎样？它怎么解决？
+
+> **答：** 按普通 sliding window，第 384 个 image token **根本看不到第 1 个**，一张图会被切碎。
+> DeepSeek 在 attention mask 里专门识别 `[IMAGE_START, IMAGE_END]` 区间，对同一张 image span **扩展可见范围**，让图像内部 token 能跨过 128-token window 互相访问（实现里的 `get_image_visible()` 就是在算当前 token 距 image span 左右边界多远）。
+
