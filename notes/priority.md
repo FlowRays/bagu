@@ -69,6 +69,17 @@
 
 全部本地跑通并交叉验证。优先级排序见 [手撕总表](code/07-handwrite/00-map.md#按优先级刷)。
 
+## 优先级 2d：LeetCode 高频 39 题（C++）
+
+对应目录 [`code/08-leetcode/`](code/08-leetcode/00-map.md)
+
+- [x] 数组 / 字符串 / 二分 12 道
+- [x] 链表 / 栈 / 堆 / 区间 9 道
+- [x] 二叉树 / 图 / 回溯 / 贪心 8 道
+- [x] 动态规划 10 道（含股票四连）
+
+全部编译跑通 + 随机对拍。两份题单交集的 14 道见 [第一优先级](code/08-leetcode/00-map.md#第一优先级两份题单的交集14-道)。
+
 ## 优先级 3：框架代码
 
 对应目录 [`code/06-frameworks/`](code/06-frameworks/rl-framework-source-reading.md)

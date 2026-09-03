@@ -142,6 +142,17 @@
       "notes/code/07-handwrite/03-llm.md"
      ],
      "dirs": []
+    },
+    {
+     "path": "notes/code/08-leetcode/",
+     "files": [
+      "notes/code/08-leetcode/00-map.md",
+      "notes/code/08-leetcode/01-array-string.md",
+      "notes/code/08-leetcode/02-list-stack-heap.md",
+      "notes/code/08-leetcode/03-tree-graph.md",
+      "notes/code/08-leetcode/04-dp.md"
+     ],
+     "dirs": []
     }
    ]
   }
