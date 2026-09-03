@@ -238,7 +238,10 @@
      {
       "path": "embodied/02-visual-generation/",
       "files": [
-       "embodied/02-visual-generation/01-generative-models.md"
+       "embodied/02-visual-generation/00-map.md",
+       "embodied/02-visual-generation/01-generative-models.md",
+       "embodied/02-visual-generation/02-diffusion.md",
+       "embodied/02-visual-generation/03-flow-matching.md"
       ],
       "dirs": []
      }

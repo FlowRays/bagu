@@ -139,8 +139,73 @@ body.hide-answers .md blockquote.answer { display: none; }
 <script>
 const $content = document.getElementById('content');
 const $tree = document.getElementById('tree');
-/* 只在本地存在的私密笔记(见 .gitignore); 线上取不到就不显示 */
-const PRIVATE = ['notes/interview.md', 'notes/oj-sspoffer-48.md'];
+/* ---- 私密笔记: 仓库里只有密文, 密码在浏览器里派生密钥解密 ----
+   静态托管没有服务端, 任何"输密码放行"都能绕过, 所以只能做客户端加密。
+   安全上限由密码熵决定: 拿到密文可以离线爆破, 高迭代 PBKDF2 只能拖慢。
+   生成: python3 tools/encrypt_private.py */
+let PRIV = null;                      /* private/index.json */
+let privKey = null;                   /* 解出来的 CryptoKey, 缓存在内存 */
+
+const b64d = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+const b64e = u => btoa(String.fromCharCode(...new Uint8Array(u)));
+
+async function deriveKey(password) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password),
+    'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: b64d(PRIV.salt), iterations: PRIV.iter, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+}
+
+/* 记住已解出的密钥, 免得每次都输密码 */
+async function cachedKey() {
+  if (privKey) return privKey;
+  let raw = null;
+  try { raw = localStorage.getItem('privKey'); } catch (e) { /* 隐私模式 */ }
+  if (raw) {
+    try {
+      privKey = await crypto.subtle.importKey('raw', b64d(raw),
+        { name: 'AES-GCM' }, true, ['decrypt']);
+      return privKey;
+    } catch (e) { /* 坏了就当没有 */ }
+  }
+  return null;
+}
+async function rememberKey(k) {
+  privKey = k;
+  try { localStorage.setItem('privKey', b64e(await crypto.subtle.exportKey('raw', k))); }
+  catch (e) { /* 隐私模式下就只留在内存 */ }
+}
+function forgetKey() {
+  privKey = null;
+  try { localStorage.removeItem('privKey'); } catch (e) { /* noop */ }
+}
+
+/* 取一篇私密笔记的明文; 密码错或没输就返回 null */
+async function fetchPrivate(path) {
+  const res = await fetch(PRIV.files[path], { cache: 'no-store' });
+  if (!res.ok) throw new Error(`密文取不到 (${res.status})`);
+  const blob = await res.json();
+  for (let tries = 0; tries < 3; tries++) {
+    let key = await cachedKey();
+    if (!key) {
+      const pw = prompt('这篇是私密笔记，请输入密码：');
+      if (!pw) return null;
+      key = await deriveKey(pw);          /* 600k 次迭代, 约 0.3~1 秒 */
+    }
+    try {
+      const pt = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: b64d(blob.iv) }, key, b64d(blob.ct));
+      await rememberKey(key);             /* 解开了才记住 */
+      return new TextDecoder().decode(pt);
+    } catch (e) {
+      forgetKey();                        /* GCM 校验失败 = 密码不对 */
+      if (tries === 2) { alert('密码错误'); return null; }
+      alert('密码错误，请重试');
+    }
+  }
+  return null;
+}
 
 /* ---- math: 先保护代码, 再抽出公式占位, 渲染后回填 katex ---- */
 function renderMarkdown(src) {
@@ -206,9 +271,17 @@ async function load(path, anchor) {
   path = decodeURIComponent(path);
   let text;
   try {
-    const res = await fetch(encodeURI(path), { cache: 'no-store' });
-    if (!res.ok) throw new Error(res.status);
-    text = await res.text();
+    if (PRIV && PRIV.files[path]) {          /* 私密笔记: 取密文再解密 */
+      text = await fetchPrivate(path);
+      if (text === null) {
+        $content.innerHTML = '<p class="err">需要密码才能查看这篇笔记</p>';
+        return;
+      }
+    } else {
+      const res = await fetch(encodeURI(path), { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      text = await res.text();
+    }
   } catch (e) {
     $content.innerHTML = `<p class="err">无法加载 ${path} (${e.message})</p>`;
     return;
@@ -290,11 +363,14 @@ async function renderBase(base) {
   $tree.innerHTML = '';
   $tree.appendChild(docLink(base.root, 'doc root'));
   for (const f of base.tree.files) $tree.appendChild(docLink(f));
-  /* 本地私密笔记: 被 .gitignore 排除, 只有本地存在; 线上 404 时自动跳过 */
-  for (const p of PRIVATE) {
-    if (!p.startsWith(base.tree.path)) continue;
-    try { if ((await fetch(p, { method: 'HEAD' })).ok) $tree.appendChild(docLink(p)); }
-    catch (e) { /* 不存在就不显示 */ }
+  /* 私密笔记: 仓库里只有密文, 点开时要密码 */
+  if (PRIV) {
+    for (const p of Object.keys(PRIV.files)) {
+      if (!p.startsWith(base.tree.path)) continue;
+      const a = docLink(p);
+      a.textContent = '🔒 ' + a.textContent;
+      $tree.appendChild(a);
+    }
   }
   for (const d of base.tree.dirs) $tree.appendChild(renderNode(d));
   try { localStorage.setItem('base', base.id); } catch (e) { /* 隐私模式等 */ }
@@ -305,6 +381,8 @@ async function renderBase(base) {
   applyAnswers();
   try {
     BASES = await loadManifest();
+    try { PRIV = await (await fetch('private/index.json', { cache: 'no-store' })).json(); }
+    catch (e) { PRIV = null; }              /* 没有私密笔记就当没有 */
     $baseSel.innerHTML = '';
     for (const b of BASES) {
       const o = document.createElement('option');
