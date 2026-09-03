@@ -258,7 +258,8 @@ function renderNode(node) {
 function docLink(path, cls = 'doc') {
   const a = document.createElement('a');
   a.className = cls; a.href = '#' + path; a.dataset.path = path;
-  a.textContent = nameOf(path);
+  /* 有密文的笔记加个锁, 点开时要密码 */
+  a.textContent = (PRIV && PRIV.files[path] ? '🔒 ' : '') + nameOf(path);
   return a;
 }
 
@@ -363,15 +364,6 @@ async function renderBase(base) {
   $tree.innerHTML = '';
   $tree.appendChild(docLink(base.root, 'doc root'));
   for (const f of base.tree.files) $tree.appendChild(docLink(f));
-  /* 私密笔记: 仓库里只有密文, 点开时要密码 */
-  if (PRIV) {
-    for (const p of Object.keys(PRIV.files)) {
-      if (!p.startsWith(base.tree.path)) continue;
-      const a = docLink(p);
-      a.textContent = '🔒 ' + a.textContent;
-      $tree.appendChild(a);
-    }
-  }
   for (const d of base.tree.dirs) $tree.appendChild(renderNode(d));
   try { localStorage.setItem('base', base.id); } catch (e) { /* 隐私模式等 */ }
 }

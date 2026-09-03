@@ -7,6 +7,8 @@
    "tree": {
     "path": "notes/",
     "files": [
+     "notes/interview.md",
+     "notes/oj-sspoffer-48.md",
      "notes/priority.md",
      "notes/render-test.md"
     ],
@@ -317,6 +319,19 @@
    "tree": {
     "path": "papers/",
     "files": [],
+    "dirs": []
+   }
+  },
+  {
+   "id": "ideas",
+   "title": "想法思考 🔒",
+   "root": "ideas.md",
+   "tree": {
+    "path": "ideas/",
+    "files": [
+     "ideas/01-game-directions.md",
+     "ideas/02-reading.md"
+    ],
     "dirs": []
    }
   }

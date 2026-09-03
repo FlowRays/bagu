@@ -13,3 +13,6 @@ __pycache__/
 
 # 付费题库汇总（sspoffer 会员内容），只在本地看，不进公开仓库
 notes/oj-sspoffer-48.md
+
+# 「想法思考」整本只在本地留明文，仓库里只有 private/*.enc 密文
+ideas/

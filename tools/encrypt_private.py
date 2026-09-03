@@ -28,11 +28,13 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "private"
 ITER = 600_000          # 和 index.html 里必须一致; OWASP 2023 对 PBKDF2-SHA256 的建议值
 
-# 要加密的本地私密笔记 -> 输出名
+# 单篇私密笔记 -> 输出名
 FILES = {
     "notes/interview.md":      "interview",
     "notes/oj-sspoffer-48.md": "oj-sspoffer-48",
 }
+# 整本加密的知识库: 目录下所有 .md 都加密
+PRIVATE_DIRS = ["ideas"]
 
 
 def read_password() -> str:
@@ -53,8 +55,14 @@ def main() -> None:
     # 才谈得上"输一次密码就够"。每个文件仍然用独立的 IV(GCM 的安全要求)。
     salt = os.urandom(16)
     key = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, ITER, dklen=32)
+    targets = dict(FILES)
+    for d in PRIVATE_DIRS:                      # 整本加密的知识库
+        for f in sorted((ROOT / d).rglob("*.md")) if (ROOT / d).is_dir() else []:
+            rel = f.relative_to(ROOT).as_posix()
+            targets[rel] = rel[:-3].replace("/", "__")
+
     files = {}
-    for src, name in FILES.items():
+    for src, name in targets.items():
         p = ROOT / src
         if not p.exists():
             print(f"跳过(不存在): {src}")

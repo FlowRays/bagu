@@ -2,9 +2,11 @@
  "kdf": "PBKDF2-SHA256",
  "iter": 600000,
  "cipher": "AES-256-GCM",
- "salt": "Ly3FXO/bksEY86dqf64IVg==",
+ "salt": "tkORWTdbrE0JXkvs55xeWQ==",
  "files": {
   "notes/interview.md": "private/interview.enc",
-  "notes/oj-sspoffer-48.md": "private/oj-sspoffer-48.enc"
+  "notes/oj-sspoffer-48.md": "private/oj-sspoffer-48.enc",
+  "ideas/01-game-directions.md": "private/ideas__01-game-directions.enc",
+  "ideas/02-reading.md": "private/ideas__02-reading.enc"
  }
 }

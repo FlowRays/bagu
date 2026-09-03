@@ -21,7 +21,16 @@ BASES = [
     {"id": "llm",      "title": "LLM/VLM 八股笔记", "dir": "notes",    "root": "bagu.md"},
     {"id": "embodied", "title": "VLA/WAM 八股笔记", "dir": "embodied", "root": "embodied.md"},
     {"id": "papers",   "title": "论文笔记",         "dir": "papers",   "root": "papers.md"},
+    {"id": "ideas",    "title": "想法思考 🔒",      "dir": "ideas",    "root": "ideas.md"},
 ]
+
+
+def encrypted() -> set[str]:
+    """有密文的路径: 虽然被 gitignore, 但侧边栏要显示(点开时解密)."""
+    f = ROOT / "private" / "index.json"
+    if not f.exists():
+        return set()
+    return set(json.loads(f.read_text(encoding="utf-8")).get("files", {}))
 
 
 def ignored(d: Path) -> set[str]:
@@ -32,6 +41,9 @@ def ignored(d: Path) -> set[str]:
     r = subprocess.run(["git", "check-ignore", "--stdin"], cwd=ROOT,
                        input="\n".join(paths), capture_output=True, text=True)
     return set(r.stdout.split())
+
+
+ENC: set[str] = set()
 
 
 def walk(d: Path, skip: set[str]) -> dict:
@@ -53,13 +65,14 @@ def count(node: dict) -> int:
 
 
 if __name__ == "__main__":
+    ENC = encrypted()
     out = {"bases": []}
     for b in BASES:
         d = ROOT / b["dir"]
         if not d.is_dir():
             print(f"跳过(目录不存在): {b['dir']}/")
             continue
-        skip = ignored(d)
+        skip = ignored(d) - ENC          # 有密文的不算"要跳过"
         if skip:
             print(f"跳过(git 忽略的本地私密笔记): {', '.join(sorted(skip))}")
         tree = walk(d, skip)
