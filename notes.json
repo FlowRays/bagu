@@ -132,6 +132,16 @@
       "notes/code/06-frameworks/rl-framework-source-reading.md"
      ],
      "dirs": []
+    },
+    {
+     "path": "notes/code/07-handwrite/",
+     "files": [
+      "notes/code/07-handwrite/00-map.md",
+      "notes/code/07-handwrite/01-ml.md",
+      "notes/code/07-handwrite/02-dl.md",
+      "notes/code/07-handwrite/03-llm.md"
+     ],
+     "dirs": []
     }
    ]
   }

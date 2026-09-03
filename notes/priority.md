@@ -59,6 +59,16 @@
 
 自测题库：[03-training-fundamentals/self-test.md](03-training-fundamentals/self-test.md)（52 题）
 
+## 优先级 2c：手撕代码
+
+对应目录 [`code/07-handwrite/`](code/07-handwrite/00-map.md)
+
+- [x] **机器学习 6 道**：K-Means、逻辑回归、PCA、线性回归、KNN、AUC
+- [x] **深度学习 18 道**：卷积/池化/im2col、Sigmoid/Softmax/CE/BCE/KL、LayerNorm/BatchNorm、SGD/Adam、反向传播、MLP
+- [x] **大模型 17 道**：Self-Attention/MHA/Cross/GQA/MLA、KV Cache、RMSNorm、SwiGLU、Encoder Block、InfoNCE、SFT/DPO/PPO/GRPO、LoRA、RQ-VAE、模型分片
+
+全部本地跑通并交叉验证。优先级排序见 [手撕总表](code/07-handwrite/00-map.md#按优先级刷)。
+
 ## 优先级 3：框架代码
 
 对应目录 [`code/06-frameworks/`](code/06-frameworks/rl-framework-source-reading.md)
