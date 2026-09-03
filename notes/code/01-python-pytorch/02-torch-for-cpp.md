@@ -233,13 +233,78 @@ for batch in loader:
 
 ## 自测
 
-1. `keepdim` 和 `keepdims` 哪个是 torch 的？`var` 的默认无偏设置 torch 和 numpy 哪个不一样？
-2. `repeat` 和 `repeat_interleave` 分别产生什么？GQA 用哪个？
-3. `view` 和 `reshape` 的区别？什么时候 `view` 会报错？
-4. 写出 causal mask 的完整三行（生成 mask、masked_fill、softmax）。为什么填 `-inf` 不是 0？
-5. 一行全被 mask 掉会发生什么？
-6. `detach()` 和 `no_grad()` 的区别？RQ-VAE 里两个 loss 的 detach 为什么加在相反一侧？
-7. `nn.Parameter` 和 `register_buffer` 的区别？各自会不会进 `state_dict`、会不会被优化器更新？
-8. `F.cross_entropy` 吃的是 logits 还是概率？target 要什么 dtype？
-9. `F.kl_div` 的三个坑分别是什么？
-10. 训练四步的顺序，`clip_grad_norm_` 插在哪一步？
+**1.** `keepdim` 和 `keepdims` 哪个是 torch 的？`var` 的默认无偏设置 torch 和 numpy 哪个不一样？
+
+> **答：** **torch 是 `keepdim`（没有 s），numpy 是 `keepdims`**；同理 torch 用 `dim=`、numpy 用 `axis=`。
+> `var`：**numpy 默认有偏**（除 $n$），**torch 默认无偏**（除 $n-1$）。要对齐得写 `t.var(-1, unbiased=False)`。
+> GRPO 里做 advantage 归一化时这个差异会让两边差一个 $\sqrt{n/(n-1)}$。
+
+**2.** `repeat` 和 `repeat_interleave` 分别产生什么？GQA 用哪个？
+
+> **答：** `torch.tensor([1,2,3]).repeat(2)` → `[1,2,3,1,2,3]`（整体重复，≈ `np.tile`）；
+> `.repeat_interleave(2)` → `[1,1,2,2,3,3]`（逐元素重复，≈ `np.repeat`）。
+> **GQA 用 `repeat_interleave`**，因为相邻的 $g$ 个 query head 要共享同一组 KV。用错不报错但结果错。
+
+**3.** `view` 和 `reshape` 的区别？什么时候 `view` 会报错？
+
+> **答：** `view` **要求内存连续**，不满足直接报错，但永不复制；`reshape` 不要求连续，需要时会自动复制。
+> 典型报错场景：`t.transpose(0,1).view(-1)` —— transpose 只换了 strides，内存已经不连续。
+> 解决：用 `reshape`，或先 `contiguous().view()`。**经验：拆头做完 attention 拼回去一律用 `reshape`。**
+
+**4.** 写出 causal mask 的完整三行（生成 mask、masked_fill、softmax）。为什么填 `-inf` 不是 0？
+
+> **答：** ```python
+> mask = torch.tril(torch.ones(L, L, dtype=torch.bool, device=x.device))
+> scores = scores.masked_fill(~mask, float('-inf'))
+> attn = F.softmax(scores, dim=-1)
+> ```
+> 填 `-inf` 是因为要在 **softmax 之前**屏蔽：$e^{-\infty}=0$，该位置权重恰好为 0 **且不进入分母**。
+> softmax 之后再乘 0 是错的 —— 分母里仍然算了被屏蔽的位置，剩余权重不再归一到 1。
+> （`masked_fill(条件, 值)` 填的是**条件为 True** 的位置，所以要想清楚你的 mask 是「1 表示可见」还是「1 表示屏蔽」。）
+
+**5.** 一行全被 mask 掉会发生什么？
+
+> **答：** 该行 softmax 的分母为 0，输出 **`nan`**，然后 nan 会污染整个后续计算和梯度。
+> 变长 batch 里要保证**每行至少有一个可见位置**（比如 padding 行也让它能看到自己），或者在 softmax 后把整行是 nan 的位置置零。
+
+**6.** `detach()` 和 `no_grad()` 的区别？RQ-VAE 里两个 loss 的 detach 为什么加在相反一侧？
+
+> **答：** `detach()` 作用在**单个张量**上，切断这一支的梯度回传，值不变；`with torch.no_grad():` 作用在**整块代码**上，里面完全不建计算图，能省大量 activation 显存。
+> RQ-VAE：
+> ```python
+> cb_loss = F.mse_loss(e, res.detach())   # 只更新码本 e
+> commit  = F.mse_loss(res, e.detach())   # 只更新编码器 res
+> ```
+> 两个 loss 长得几乎一样，`detach` 加在**相反**一侧，决定了梯度流向谁 —— 一个拉码本靠近残差，一个拉编码器靠近码本。
+
+**7.** `nn.Parameter` 和 `register_buffer` 的区别？各自会不会进 `state_dict`、会不会被优化器更新？
+
+> **答：** | | 进 `parameters()` | 被优化器更新 | 进 `state_dict` |
+> |---|---|---|---|
+> | `nn.Parameter` | 是 | **是** | 是 |
+> | `register_buffer` | 否 | **否** | **是** |
+> | 普通属性 | 否 | 否 | 否 |
+> LoRA 里冻结的 $W$ 用 `register_buffer`（要存进 checkpoint 但不训练），$A,B$ 用 `nn.Parameter`，缩放系数 $\alpha/r$ 是普通属性。BatchNorm 的 running_mean/var 也是 buffer。
+
+**8.** `F.cross_entropy` 吃的是 logits 还是概率？target 要什么 dtype？
+
+> **答：** 吃的是 **logits**，内部自己做 log_softmax。**千万别自己先 softmax 再传进去**，等于做了两次。
+> target 是类别下标且必须是 **`int64`（long）**，传 int32 会报错。
+> 关系：`cross_entropy = log_softmax + nll_loss`；`F.nll_loss` 吃的才是 log 概率。
+
+**9.** `F.kl_div` 的三个坑分别是什么？
+
+> **答：** ① 第一个参数 `input` 要传 **log-prob**（不是 prob）；
+> ② 方向是 **`KL(target ‖ input)`**，和数学写法 $D_{KL}(p\|q)$ 反着 —— 想算 $D_{KL}(p\|q)$ 要写 `F.kl_div(q.log(), p)`；
+> ③ `reduction` 要用 **`batchmean`** 而不是默认的 `mean`（默认会除以元素总数而不是 batch 数，得到的不是数学定义的 KL）。
+
+**10.** 训练四步的顺序，`clip_grad_norm_` 插在哪一步？
+
+> **答：** ```python
+> opt.zero_grad()                                    # 1) 清梯度
+> loss.backward()                                    # 2) 反向
+> torch.nn.utils.clip_grad_norm_(params, 1.0)        # 3) 裁剪
+> opt.step()                                         # 4) 更新
+> ```
+> `clip_grad_norm_` 必须在 **backward 之后、step 之前**。顺序是死的，`zero_grad` 忘了会导致梯度累加、越训越离谱。
+

@@ -161,13 +161,55 @@ $$\text{MFU}=\frac{6ND/\text{step 时间}}{\text{GPU 峰值 FLOPS}\times\text{�
 
 ## 自测
 
-1. ⭐ 怎么快速判断 OOM 是 activation 还是 model states 的问题？
-2. 按代价从小到大列出解决 OOM 的手段。
-3. ⭐ 「跑几百步后才 OOM」的两种可能原因？往 list 里存 loss 为什么会泄漏？
-4. `reserved` 远大于 `allocated` 说明什么？
-5. ⭐ NaN 的常见原因列表？为什么整行被 mask 会出 nan？
-6. ⭐ 稳定性排查的五步顺序？为什么先用 FP32 跑？
-7. ⭐ 为什么 CUDA 计时必须 synchronize？
-8. MFU 怎么算？多少算正常？
-9. ⭐⭐ 结果不对时最有效的第一个 sanity check 是什么？为什么？
-10. 说出三个静默错误（不报错但结果不对）的例子。
+**1.** 怎么快速判断 OOM 是 activation 还是 model states 的问题？
+
+> **答：** **把 `batch_size` 减半**：显存明显下降 → 瓶颈是 **activation**（该上 gradient checkpointing、减 microbatch + 梯度累积、SP/CP）；几乎不变 → 瓶颈是 **model states**（该上 ZeRO-2/3、TP、offload、LoRA）。
+> 一句话：**batch 减半显存不变，就别再折腾 activation 了。**
+
+**2.** 按代价从小到大列出解决 OOM 的手段。
+
+> **答：** ① 减 microbatch + 梯度累积（不改有效 batch，几乎无损）；② gradient checkpointing（activation ↓40–70%，计算 +33%）；③ **ZeRO-2**（通信量和 DDP 一样，sweet spot）；④ ZeRO-3 / FSDP（通信 +50%）；⑤ TP（高频通信，最好在 node 内）；⑥ CPU offload（很慢，最后手段）。
+
+**3.** 「跑几百步后才 OOM」的两种可能原因？往 list 里存 loss 为什么会泄漏？
+
+> **答：** 两种：**显存碎片**（`reserved` 远大于 `allocated`，可试 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`）；或者**有东西在累积**。
+> `losses.append(loss)` 存的是**带计算图的张量**，整张图被一直挂着无法释放，几百步后就爆了。**任何往 list 里存的张量都要先 `.item()` 或 `.detach()`。**
+> 其他常见「意外」OOM：eval 忘了 `torch.no_grad()`、变长数据撞上最长的 batch（应按 token 数而不是样本数组 batch）。
+
+**4.** `reserved` 远大于 `allocated` 说明什么？
+
+> **答：** 说明**显存碎片严重** —— allocator 向驱动要了很多显存，但因为碎片化拼不出连续的大块来满足新的分配请求。
+> 可以试 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`，或者用 `torch.cuda.memory._record_memory_history()` + `_dump_snapshot()` 导出显存时间线定位。
+
+**5.** NaN 的常见原因列表？为什么整行被 mask 会出 nan？
+
+> **答：** **log(0)**（交叉熵、KL 没做数值稳定 → 用 `log_softmax`、`logsigmoid`）、**除 0**（归一化分母没加 eps；GRPO 组内 reward 全同导致 std=0）、**整行被 mask**、**FP16 溢出**、**lr 太大/没 warmup**、**脏数据**、**梯度爆炸**。
+> 整行被 mask 出 nan 是因为：attention 某一行全是 `-inf`，softmax 的分母 $\sum e^{-\infty}=0$，$0/0=$ **nan**。变长 batch 要保证每行至少一个可见位置。
+
+**6.** 稳定性排查的五步顺序？为什么先用 FP32 跑？
+
+> **答：** ① **关掉混合精度用 FP32 跑几步**；② 检查 loss 里所有的 `log` 和除法；③ 检查 mask 有没有整行为空；④ 把 lr 降 10 倍看还崩不崩；⑤ 固定 seed 定位到具体 batch，dump 出来检查数据。
+> 先用 FP32 是为了**一刀切开两类问题**：FP32 下还崩就是**逻辑错**（公式写错、mask 错），不崩就是**数值问题**（精度/溢出）。这一步能省掉大量瞎猜。
+
+**7.** 为什么 CUDA 计时必须 synchronize？
+
+> **答：** **CUDA kernel 的下发是异步的** —— Python 端 `t0=time()` 到 `t1=time()` 之间只是把 kernel 塞进了 stream，GPU 可能还没开始算。不 `torch.cuda.synchronize()` 测到的是**下发时间**而不是执行时间，数字完全没意义。
+
+**8.** MFU 怎么算？多少算正常？
+
+> **答：** $$\text{MFU}=\frac{6ND/\text{step 时间}}{\text{GPU 峰值 FLOPS}\times\text{卡数}}$$
+> 大规模训练做到 **40%–50%** 算正常，**低于 30% 就该查了**（数据加载瓶颈、通信没 overlap、kernel 效率低、batch 太小）。
+
+**9.** 结果不对时最有效的第一个 sanity check 是什么？为什么？
+
+> **答：** **overfit 一个 batch**：拿 8 条数据训到 loss 接近 0。
+> 做不到就说明**实现有 bug**（loss mask 错、shift 错位、梯度没回传、数据处理错），此时再调超参是浪费时间。这个检查成本极低但排除了绝大多数实现错误。
+> 之后再按顺序查：loss mask → shift → chat template → 随机抽 20 条 decode 回文本人眼看 → packing 的 position_ids → 和 HF Trainer 对拍 loss 曲线。
+
+**10.** 说出三个静默错误（不报错但结果不对）的例子。
+
+> **答：** ① **`repeat` 写成 `repeat_interleave`**（或反过来）：GQA 的 head 和 KV 组对不上，效果异常但不报错；
+> ② **`var` 的无偏默认差异**：numpy 除 $n$、torch 除 $n-1$，两边实现对不上；
+> ③ **`F.kl_div` 的方向**：第一个参数要 log-prob 且方向是 `KL(target‖input)`，写反了算出来是另一个量。
+> 还有：**position_ids 没 reset** 导致 packing 后效果掉、**tool 输出算了 loss** 导致模型幻想工具返回、**lr schedule 按 forward 次数而不是 optimizer step 计数**。
+
