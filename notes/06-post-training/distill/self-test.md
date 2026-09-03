@@ -138,14 +138,16 @@
 > $-\beta D_{KL}(\pi\|\pi_R^*)=\mathbb E_\pi[R]-\beta D_{KL}(\pi\|\pi_{\text{ref}})-\beta\log Z$，最后一项与 $\pi$ 无关。
 > 含义：**KL-regularized RL 本身就在做 sequence-level reverse KL**，只是它的 teacher 分布没有显式模型，由 reward model + reference model 隐式定义。OPD 相当于把这个隐式 teacher 换成真实存在、且能逐 token 给 logprob 的 $\pi_T$。
 
-**26.** ⭐⭐ 什么时候才必须用 PG？「forward 走 CE、reverse 走 PG」错在哪？
+**26.** ⭐⭐ SFT 的 loss 不用 PG，OPD 的 reverse KL 要，结构差别在哪？
 
-> **答：** 触发条件是 **$\theta$ 出现在「期望所依赖的采样分布」里，且只能采样不能枚举**，两个条件缺一不可。
-> 四格里只有一格要 PG：forward KL 无论枚举还是采样都直接 backprop（采样自 $\pi_T$，与 $\theta$ 无关）；**reverse KL 全词表枚举时也直接 backprop**（就是个处处可导的求和，`.backward()` 即可）；只有**从 $\pi_S$ 采样的 reverse KL** 必须 PG。
-> 实践里看起来是「forward↔CE、reverse↔PG」，是**成本**决定的：选 reverse KL 就是图它只要 $[B,L]$ 而非 $[B,L,V]$，为了省就得采样，于是必须 PG。**是「采样 vs 枚举」决定的，KL 方向只是间接原因。**
-> 详见 [04 第 7 节](04-reverse-kl-as-pg.md#7-卡点到底什么时候才必须用-pg)。
-
-## E. KL 怎么估（[05](05-kl-estimation.md)）
+> **答：** 把两个都写成 $L=\sum_v w(v)f_\theta(v)$，**唯一差别是 reverse KL 的权重 $w=\pi_S$ 里也含 $\theta$**（SFT 的权重是 one-hot 标签、forward KL 的是 $\pi_T$，都与 $\theta$ 无关）。
+> 链式法则两项：$\nabla L=\underbrace{\sum\nabla w\cdot f}_{(I)\ \text{权重在动}}+\underbrace{\sum w\cdot\nabla f}_{(II)\ \text{被积函数在动}}$。
+> **SFT / forward KL**：(I) 压根不存在，梯度全在 (II)。
+> **reverse KL**：$(II)=\sum\pi_S\nabla\log\pi_S=\nabla 1=0$，梯度**全在 (I)**。两者的来源恰好互换。
+> 采样时代码是 `mean(logp[a]-logq[a])`，权重 $\pi_S$ 被**吸收进「哪些下标被抽中」**，而下标是常数 → autograd 只算得到 (II) ≡ 0 → 梯度全丢（实测几乎全零）。
+> PG 就是用 log-derivative 把 (I) 改写成可采样的期望：$\sum\nabla\pi_S\,f=\mathbb E_{v\sim\pi_S}[f\,\nabla\log\pi_S]$。
+> forward KL 从 $\pi_T$ 采（与 $\theta$ 无关），本来就没有 (I)，所以什么都不丢。
+> 详见 [04 第 7 节](04-reverse-kl-as-pg.md#7-卡点sft-的-loss-不用-pgopd-的-loss-要差在哪)。
 
 **27.** ⭐ OPD 的三档 KL 估计是什么？各自的取舍？
 

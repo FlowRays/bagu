@@ -139,73 +139,81 @@ $$\boxed{\max_\pi\big\{\mathbb E_\pi[R]-\beta D_{KL}(\pi\|\pi_{\text{ref}})\big\
 
 OPD 相当于把这个隐式 teacher $\pi_R^*$ 换成一个**真实存在、而且能对每个 token 给 logprob** 的 $\pi_T$。这就是 "reverse KL 与 RL 有天然 synergy" 的准确含义。
 
-## 7. 卡点：到底什么时候才必须用 PG
+## 7. 卡点：SFT 的 loss 不用 PG，OPD 的 loss 要，差在哪
 
-很容易得出一个**错误**的结论：「forward KL 走监督 CE，reverse KL 走 policy gradient」。
-这句话在最常见的那个 recipe 下碰巧成立，但它把因果搞反了。
+把两个 loss 写成**同一个形式**：
 
-### 真正的触发条件
+$$L=\sum_v \underbrace{w(v)}_{\text{权重}}\cdot \underbrace{f_\theta(v)}_{\text{被积函数}}$$
 
-$$\boxed{\theta\ \text{出现在「期望所依赖的采样分布」里，\textbf{并且}只能采样、不能枚举}}$$
-
-两个条件缺一不可。拆开看：
-
-**条件一：$\theta$ 在不在采样分布里。**
-
-$$D_{KL}(\pi_T\|\pi_S)=\mathbb E_{v\sim\pi_T}[\cdots]\qquad D_{KL}(\pi_S\|\pi_T)=\mathbb E_{v\sim\pi_S}[\cdots]$$
-
-forward KL 的期望在 $\pi_T$ 下，**teacher 与 $\theta$ 无关**，采样这一步不携带任何梯度信息，直接对被积函数 backprop 就是无偏的。
-reverse KL 的期望在 $\pi_S$ 下，$\theta$ **既在被积函数里、又在采样分布里**，后面这一半普通 backprop 拿不到。
-
-**条件二：能不能枚举。**
-
-如果能把整个词表加起来，"期望"就退化成一个**确定性的求和**，压根没有采样这一步：
-
-$$D_{KL}(\pi_S\|\pi_T)=\sum_{v\in\mathcal V}\pi_S(v)\log\frac{\pi_S(v)}{\pi_T(v)}$$
-
-这是一个关于 $\theta$ 处处可导的普通表达式，`softmax` → 求和 → `.backward()` 就完事了。
-
-$$\boxed{\textbf{full-vocab reverse KL 不需要 PG}}$$
-
-### 四个格子里只有一个要 PG
-
-| | **全词表枚举** | **采样估计** |
+| | 权重 $w(v)$ | 被积函数 $f_\theta(v)$ |
 |---|---|---|
-| **Forward KL** $D(T\|S)$ | 直接 backprop（soft CE） | 从 $\pi_T$ 采，**仍然直接 backprop** |
-| **Reverse KL** $D(S\|T)$ | **直接 backprop** | 从 $\pi_S$ 采，**必须 PG** |
+| **SFT** | $\delta_{y^*}(v)$（one-hot 标签） | $-\log\pi_S(v)$ |
+| **Forward KL 蒸馏** | $\pi_T(v)$ | $-\log\pi_S(v)$ |
+| **Reverse KL（OPD）** | $\boxed{\pi_S(v)}$ | $\log\dfrac{\pi_S(v)}{\pi_T(v)}$ |
 
-$$\boxed{\text{要 PG 的不是 reverse KL，而是「从 }\pi_\theta\text{ 采样」的 reverse KL}}$$
+$$\boxed{\text{唯一的结构差别：reverse KL 的权重里也有 }\theta}$$
 
-### 数值验证
+### 链式法则有两项
 
-$V=5$ 的玩具例子，teacher 固定，student 是 `softmax(z)`：
+$$\nabla_\theta L=\underbrace{\sum_v \nabla_\theta w(v)\cdot f_\theta(v)}_{\text{(I) 权重在动}}\ +\ \underbrace{\sum_v w(v)\cdot\nabla_\theta f_\theta(v)}_{\text{(II) 被积函数在动}}$$
 
-| 算法 | 梯度 | 与精确值的差 |
+**SFT / forward KL**：权重是标签或 teacher 分布，**与 $\theta$ 无关** $\Rightarrow$ 第 (I) 项**压根不存在**，只剩 (II)。
+
+**Reverse KL**：两项都在。而且对 reverse KL 还有个特别的事实 ——
+
+$$\text{(II)}=\sum_v\pi_S(v)\nabla\log\frac{\pi_S(v)}{\pi_T(v)}=\sum_v\pi_S(v)\nabla\log\pi_S(v)=\nabla\sum_v\pi_S(v)=\nabla 1=0$$
+
+$$\boxed{\text{reverse KL 的梯度信息\textbf{全部}在 (I) 里；SFT 的梯度信息全部在 (II) 里}}$$
+
+实测（$V=5$，teacher 固定）：
+
+| | (I) 权重项 | (II) 被积函数项 |
 |---|---|---|
-| A. reverse KL 全词表 + 直接 backprop | `[+0.7289 −0.3269 −0.0872 −0.1851 −0.1297]` | — |
-| B. reverse KL 采样 + PG | `[+0.7286 −0.3270 −0.0871 −0.1848 −0.1296]` | $3.8\times10^{-4}$ ✅ |
-| **C. reverse KL 采样 + 天真 backprop** | `[−0.0001 +0.0001 −0.0000 +0.0002 −0.0001]` | $7.3\times10^{-1}$ ❌ |
-| D. forward KL 全词表 | `[+0.5925 −0.1905 −0.5383 +0.1778 −0.0416]` | — |
-| E. forward KL 从 teacher 采样 + 直接 backprop | `[+0.5925 −0.1906 −0.5384 +0.1781 −0.0417]` | $2.9\times10^{-4}$ ✅ |
+| Forward KL | `[0 0 0 0 0]`（不存在） | `[+0.5925 −0.1905 −0.5383 +0.1778 −0.0416]` |
+| Reverse KL | `[+0.7289 −0.3269 −0.0872 −0.1851 −0.1297]` | `[0 0 0 0 0]`（恒为 0） |
 
-**C 那一行最说明问题**：天真 backprop 算出来的梯度几乎是 0。因为它恰好只算了
+**两者的梯度来源恰好互换了。** 这就是全部答案的来源。
 
-$$\mathbb E_{a\sim p_\theta}\big[\nabla_\theta\log p_\theta(a)\big]=0$$
+### 采样把第 (I) 项弄丢了
 
-这一项 —— 正是本篇 [第 2 节](#2-把梯度真正推一遍) 里那个"会消失的第二项"。真正携带信息的第一项（**分布本身怎么随 $\theta$ 移动**）被完全漏掉了。PG 补的就是它。
+reverse KL 实际是采样估计的（只要 teacher 给采样 token 的一个标量 logprob，$[B,L]$ 而不是 $[B,L,V]$）。写成代码：
 
-### 那为什么实践中还是「forward↔CE、reverse↔PG」
+```python
+a = torch.multinomial(p, N)                # v_i 采出来只是一堆整数下标
+loss = (logp[a] - q.log()[a]).mean()       # 表达式里已经没有 π_S(v) 这个因子了
+```
 
-因为**成本**把选择绑死了（见 [KL 估计粒度](05-kl-estimation.md)）：
+$$\boxed{\text{权重 }\pi_S\text{ 被「吸收」进了「哪些下标被抽中」这件事}}$$
 
-- reverse KL 的卖点就是**便宜** —— 只要 teacher 给采样 token 的一个标量 logprob，$[B,L]$ 而不是 $[B,L,V]$。既然选它就是为了省，自然走采样，于是必须 PG。
-- 用全词表算 reverse KL 数学上完全可以，但那就丢掉了它相对 forward KL 的全部成本优势，没人这么干。
+而下标 $v_i$ 在计算图里是**常数**。autograd 只看得见 $f_\theta(v_i)$，于是算出来的只有第 (II) 项 —— 而 (II) 恒等于 0。
 
-$$\boxed{\text{是「采样 vs 枚举」这个工程选择决定要不要 PG，KL 的方向只是间接原因}}$$
+实测：采样 + 天真 backprop 得到 `[+0.0000 −0.0000 +0.0000 +0.0001 −0.0001]`，**梯度全丢**。
 
-### 旁证：连续动作里 reverse KL 也不走 PG
+$$\boxed{\text{“采样不可导”的准确含义：丢的不是采样这个操作，是「权重随 }\theta\text{ 变化」这一项}}$$
 
-diffusion / flow policy 的动作是连续的，可以**重参数化**（$x=\mu_\theta+\sigma_\theta\epsilon$），采样变成可导操作，梯度能直接穿过去。所以那边即使"从自己的分布采样"也不需要 score function。
+### PG 就是把第 (I) 项从样本里捞回来
+
+$\sum_v\nabla\pi_S(v)f(v)$ 没法直接用样本估，因为它是「梯度的加权和」而不是「某个分布下的期望」。log-derivative trick 把它改写成期望：
+
+$$\sum_v\nabla\pi_S(v)\,f(v)=\sum_v\pi_S(v)\,\nabla\log\pi_S(v)\,f(v)=\mathbb E_{v\sim\pi_S}\big[f(v)\,\nabla\log\pi_S(v)\big]$$
+
+右边是 $\pi_S$ 下的期望，**可以用样本估**。这就是 policy gradient。
+
+实测：采样 + PG 得到 `[+0.7289 −0.3269 −0.0874 −0.1850 −0.1296]`，和精确值差 $1.8\times10^{-4}$。
+
+### 而 SFT / forward KL 采样时什么都不会丢
+
+$$-\sum_v\pi_T(v)\log\pi_S(v)=\mathbb E_{v\sim\pi_T}\big[-\log\pi_S(v)\big]$$
+
+从 $\pi_T$ 采样，**这个分布与 $\theta$ 无关**。本来就没有第 (I) 项，所以"吸收进采样"没有吸收掉任何东西，autograd 拿到的 (II) 就是完整梯度。
+
+实测：forward KL 从 teacher 采样 + 直接 backprop，和全词表精确值差 $2.9\times10^{-4}$，**无偏**。
+
+SFT 是这里的极端情形：权重是 one-hot，求和只剩一项，直接就是 $-\log\pi_S(y^*)$。
+
+### 旁证：连续动作里就不需要 PG
+
+diffusion / flow policy 的动作连续，可以**重参数化**（$x=\mu_\theta+\sigma_\theta\epsilon$）：随机性被挪到与 $\theta$ 无关的 $\epsilon$ 上，权重对 $\theta$ 的依赖重新变成表达式里的显式可导路径，第 (I) 项又能被 autograd 看见。
 
 $$\boxed{\text{离散 token 无法重参数化，才是 LLM 侧非 PG 不可的根本原因}}$$
 
@@ -252,11 +260,14 @@ $$\boxed{\text{离散 token 无法重参数化，才是 LLM 侧非 PG 不可的�
 > 最后一项与 $\pi$ 无关，所以两个优化问题等价。
 > 含义：**KL-regularized RL 本身就在做 sequence-level reverse KL**，只是它的 teacher 分布没有显式模型，而由 reward model + reference model 隐式定义。OPD 相当于把这个隐式 teacher 换成真实存在、且能逐 token 给 logprob 的 $\pi_T$。
 
-**7.** ⭐⭐ 到底什么时候才必须用 PG？「forward 走 CE、reverse 走 PG」这句话错在哪？
+**7.** ⭐⭐ SFT 的 loss 不用 PG，OPD 的 reverse KL 要，结构差别在哪？
 
-> **答：** 触发条件是 **$\theta$ 出现在「期望所依赖的采样分布」里，且只能采样不能枚举**，两个条件缺一不可。
-> 四个格子里**只有一个要 PG**：forward KL 无论枚举还是采样都直接 backprop（因为从 $\pi_T$ 采，与 $\theta$ 无关）；**reverse KL 全词表枚举时也直接 backprop**（就是个处处可导的求和）；只有**从 $\pi_S$ 采样的 reverse KL** 才必须 PG。
-> 所以准确说法是「**从 $\pi_\theta$ 采样的** reverse KL 要 PG」，不是「reverse KL 要 PG」。
-> 实践中之所以看起来是「forward↔CE、reverse↔PG」，是**成本**决定的：选 reverse KL 就是图它只要 $[B,L]$ 而不是 $[B,L,V]$，既然为了省就必然走采样，于是必须 PG。
-> 旁证：连续动作（diffusion/flow policy）可以**重参数化**，即使从自己的分布采样也不需要 PG —— **离散 token 无法重参数化**，才是 LLM 侧非 PG 不可的根本原因。
+> **答：** 把两个都写成 $L=\sum_v w(v)f_\theta(v)$，**唯一差别是 reverse KL 的权重 $w=\pi_S$ 里也有 $\theta$**（SFT 的权重是 one-hot 标签、forward KL 的是 $\pi_T$，都与 $\theta$ 无关）。
+> 链式法则两项：$\nabla L=\underbrace{\sum\nabla w\cdot f}_{(I)}+\underbrace{\sum w\cdot\nabla f}_{(II)}$。
+> SFT / forward KL：**(I) 不存在**，只剩 (II)，普通 backprop 就是完整梯度。
+> reverse KL：两项都在，而且 $(II)=\sum\pi_S\nabla\log\pi_S=\nabla 1=0$，**全部信息都在 (I)**。
+> **枚举时**代码里 `p * (p.log()-q.log())` 的 $\pi_S$ 是显式可导因子，autograd 按乘法法则把 (I)(II) 都算了 → 不用 PG。
+> **采样时**代码变成 `mean(logp[a]-logq[a])`，权重 $\pi_S$ 被「吸收进哪些下标被抽中」，而下标是常数 → autograd 只算得到 (II) ≡ 0 → **梯度几乎全零**。
+> PG 就是用 log-derivative 把 (I) 改写成可采样的期望：$\sum\nabla\pi_S f=\mathbb E_{v\sim\pi_S}[f\nabla\log\pi_S]$。
+> forward KL 采样时从 $\pi_T$ 采（θ 无关），本来就没有 (I)，所以什么都不丢。
 
