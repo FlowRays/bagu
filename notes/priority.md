@@ -80,6 +80,26 @@
 
 全部编译跑通 + 随机对拍。两份题单交集的 14 道见 [第一优先级](code/08-leetcode/00-map.md#第一优先级两份题单的交集14-道)。
 
+## 优先级 3a：LLM 架构（bagu.md 补齐）
+
+对应目录 [`01-llm-arch/`](01-llm-arch/00-map.md)
+
+- [x] Tokenizer 与词表、位置编码（RoPE / NTK / YaRN）、Normalization（pre-norm / QK-norm）
+- [x] **Attention 家族**（MHA / MQA / GQA / MLA、KV cache 账、attention sink）
+- [x] FFN 与 MoE（SwiGLU、router、负载均衡、aux-loss-free）、LM head 与 MTP
+
+自测题库：[01-llm-arch/self-test.md](01-llm-arch/self-test.md)（44 题）
+
+## 优先级 3b：推理与部署
+
+对应目录 [`02-inference-serving/`](02-inference-serving/00-map.md)
+
+- [x] prefill / decode、算术强度、四个指标、采样
+- [x] PagedAttention、continuous batching、prefix caching、chunked prefill
+- [x] 投机解码（无损性证明）、GPTQ / AWQ / FP8、激活异常值
+
+自测题库：[02-inference-serving/self-test.md](02-inference-serving/self-test.md)（30 题）
+
 ## 优先级 3：框架代码
 
 对应目录 [`code/06-frameworks/`](code/06-frameworks/rl-framework-source-reading.md)

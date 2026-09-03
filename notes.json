@@ -7,12 +7,27 @@
  "dirs": [
   {
    "path": "notes/01-llm-arch/",
-   "files": [],
+   "files": [
+    "notes/01-llm-arch/00-map.md",
+    "notes/01-llm-arch/01-tokenizer.md",
+    "notes/01-llm-arch/02-position-encoding.md",
+    "notes/01-llm-arch/03-normalization.md",
+    "notes/01-llm-arch/04-attention.md",
+    "notes/01-llm-arch/05-ffn-moe.md",
+    "notes/01-llm-arch/06-lm-head-and-mtp.md",
+    "notes/01-llm-arch/self-test.md"
+   ],
    "dirs": []
   },
   {
    "path": "notes/02-inference-serving/",
-   "files": [],
+   "files": [
+    "notes/02-inference-serving/00-map.md",
+    "notes/02-inference-serving/01-inference-basics.md",
+    "notes/02-inference-serving/02-serving-optimization.md",
+    "notes/02-inference-serving/03-speculative-and-quant.md",
+    "notes/02-inference-serving/self-test.md"
+   ],
    "dirs": []
   },
   {

@@ -86,7 +86,7 @@ $$4\times8192\times4096\times2\approx268\text{ MB}$$
 
 **仅仅一份 tensor**，再乘每层若干份、乘 32/40/80 层，很快几十 GB。
 
-### Attention 的 $L^2$ 项与 FlashAttention
+### Attention 的平方项与 FlashAttention
 
 naive attention 的 $QK^\top\in\mathbb R^{B\times h\times L\times L}$，显存 $O(L^2)$，$L$ 翻倍显存 ×4。
 
