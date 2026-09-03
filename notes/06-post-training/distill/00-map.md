@@ -70,6 +70,7 @@ $$\text{GKD (ICLR'24)}\rightarrow\text{Thinking Machines OPD}\rightarrow\text{OP
 | # | 卡点 | 在哪 |
 |---|---|---|
 | 1 | 熵 / 交叉熵 / KL 三者到底什么关系 | [01](01-entropy-ce-kl-jsd.md#3-交叉熵--熵--kl最该背的一条恒等式) |
+| 1b | $\delta_{vk}$ 是什么、softmax 的导数为什么是个矩阵 | [01b](01b-softmax-gradient.md#1-为什么会出现两个下标-v-和-k) |
 | 2 | 为什么 CE 对 logits 的梯度就是 $p-q$ | [01](01-entropy-ce-kl-jsd.md#5-一个统一的梯度logits-梯度等于-p-减-q) |
 | 3 | JSD 是什么，为什么要绕一个 mixture $m$ | [01](01-entropy-ce-kl-jsd.md#6-jsd把两个-kl-的爆炸都拆掉) |
 | 4 | SFT 为什么可以看成 forward KL / 交叉熵 | [02](02-sft-and-kd.md#2-sft-其实是-one-hot-cross-entropy) |
@@ -91,12 +92,13 @@ $$\text{GKD (ICLR'24)}\rightarrow\text{Thinking Machines OPD}\rightarrow\text{OP
 ## 六、阅读顺序
 
 1. [01 熵 / 交叉熵 / KL / JSD](01-entropy-ce-kl-jsd.md) — 信息论地基，后面全部依赖它
-2. [02 SFT 与传统 KD](02-sft-and-kd.md) — 建立 off-policy 那一侧的基准
-3. [03 OPD](03-opd.md) — 核心定义与四象限
-4. [04 reverse KL 就是 policy gradient](04-reverse-kl-as-pg.md) — 把蒸馏和 RL 彻底接上
-5. [05 KL 怎么估：sampled / top-k / full-vocab](05-kl-estimation.md) — 工程维度
-6. [06 OPSD](06-opsd.md)
-7. [07 Rethink OPD 与 MOPD](07-rethink-and-mopd.md)
-8. [自测题](self-test.md)
+2. [01b softmax 求导的三个式子](01b-softmax-gradient.md) — **数学前置**，看不懂梯度推导先补这篇
+3. [02 SFT 与传统 KD](02-sft-and-kd.md) — 建立 off-policy 那一侧的基准
+4. [03 OPD](03-opd.md) — 核心定义与四象限
+5. [04 reverse KL 就是 policy gradient](04-reverse-kl-as-pg.md) — 把蒸馏和 RL 彻底接上
+6. [05 KL 怎么估：sampled / top-k / full-vocab](05-kl-estimation.md) — 工程维度
+7. [06 OPSD](06-opsd.md)
+8. [07 Rethink OPD 与 MOPD](07-rethink-and-mopd.md)
+9. [自测题](self-test.md)
 
 前置：[RL 目录](../rl/00-map.md)（policy gradient、advantage、PPO ratio），尤其 [07 KL 散度](../rl/07-kl.md)（forward/reverse 的记忆方法、$\pi_{old}$ vs $\pi_{ref}$）。

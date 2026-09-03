@@ -79,6 +79,7 @@
         "files": [
          "notes/06-post-training/distill/00-map.md",
          "notes/06-post-training/distill/01-entropy-ce-kl-jsd.md",
+         "notes/06-post-training/distill/01b-softmax-gradient.md",
          "notes/06-post-training/distill/02-sft-and-kd.md",
          "notes/06-post-training/distill/03-opd.md",
          "notes/06-post-training/distill/04-reverse-kl-as-pg.md",

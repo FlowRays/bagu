@@ -151,6 +151,8 @@ $$\pi_S(v)=\frac{e^{z_v}}{\sum_u e^{z_u}},\qquad \pi_T(v)\ \text{固定，与}\ 
 
 ### 7.1 预备：softmax 的两个导数
 
+> 下面三个式子如果不熟（尤其 $\delta_{vk}$ 是什么、为什么会有 $v$ 和 $k$ 两个下标），先看 [01b softmax 求导的三个式子](01b-softmax-gradient.md)，那里从零推了一遍。
+
 **log-softmax 的导数**（最常用的那个）：
 
 $$\log\pi_S(v)=z_v-\log\sum_u e^{z_u}$$
