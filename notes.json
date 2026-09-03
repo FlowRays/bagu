@@ -308,6 +308,15 @@
        "embodied/09-eval/01-eval.md"
       ],
       "dirs": []
+     },
+     {
+      "path": "embodied/10-handwrite/",
+      "files": [
+       "embodied/10-handwrite/00-map.md",
+       "embodied/10-handwrite/01-diffusion-flow.md",
+       "embodied/10-handwrite/02-action-chunking.md"
+      ],
+      "dirs": []
      }
     ]
    }

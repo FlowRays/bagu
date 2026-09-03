@@ -16,6 +16,7 @@
 | [07 数据与仿真](07-data-sim/00-map.md) | 四类数据源、遥操作质量、人类视频的三条利用路线、sim2real | 第一版 |
 | [08 具身 RL](08-embodied-rl/00-map.md) | 和 LLM RL 的五个差异、reward hacking、GRPO 在 VLA 上的三个问题 | 第一版 |
 | [09 评测](09-eval/00-map.md) | 仿真 benchmark、真机评测难点、五个陷阱 | 第一版 |
+| [10 手撕实现](10-handwrite/00-map.md) | Diffusion / DDIM / CFG / Flow matching / Action chunking 的最小实现，含**证明「不能用 MSE 回归动作」的可运行实验** | 第一版 |
 
 ## 两个约束推出全部设计
 
@@ -57,5 +58,4 @@ $$\boxed{\text{约束一：数据极贵}\qquad\boxed{\text{约束二：必须实
 - mRoPE / 多视角几何、点云与 3D 表示
 - 双臂协同、移动操作、人形全身控制
 - 触觉与力控
-- 手撕代码：diffusion / flow 的最小实现、action chunking 的实现
 - 论文精读：放进 [论文笔记](../papers.md) 那一本
