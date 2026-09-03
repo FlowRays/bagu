@@ -100,6 +100,20 @@
 
 自测题库：[02-inference-serving/self-test.md](02-inference-serving/self-test.md)（30 题）
 
+## 优先级 3c：Post-training 补齐（SFT / 偏好学习）
+
+对应目录 [`06-post-training/sft/`](06-post-training/sft/01-sft-basics.md)、[`preference/`](06-post-training/preference/01-rm-and-rlhf.md)
+
+- [x] **SFT 工程**：loss mask、shift、多轮多段 loss、packing、归一化、LoRA、灾难性遗忘（[20 题](06-post-training/sft/self-test.md)）
+- [x] **SFT 数据**：LIMA、合成方法、拒绝采样、CoT、agentic SFT 的 mask 规则
+- [x] **RM 与 RLHF**：Bradley-Terry、reward hacking、KL 项、四个模型
+- [x] **DPO**：完整推导（闭式解 → 反解 reward → 配分函数消掉）、变体、局限（[18 题](06-post-training/preference/self-test.md)）
+
+## 优先级 3d：预训练与评测
+
+- [x] [`05-pretraining/`](05-pretraining/00-map.md)：数据流水线与去重、scaling law 与 Chinchilla、训练稳定性与 muP
+- [x] [`08-eval-harness/`](08-eval-harness/00-map.md)：benchmark 与 setting、pass@k、污染、LLM-as-judge 偏置、ReAct 与编码智能体
+
 ## 优先级 3：框架代码
 
 对应目录 [`code/06-frameworks/`](code/06-frameworks/rl-framework-source-reading.md)

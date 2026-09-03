@@ -52,7 +52,12 @@
   },
   {
    "path": "notes/05-pretraining/",
-   "files": [],
+   "files": [
+    "notes/05-pretraining/00-map.md",
+    "notes/05-pretraining/01-data.md",
+    "notes/05-pretraining/02-scaling.md",
+    "notes/05-pretraining/03-stability.md"
+   ],
    "dirs": []
   },
   {
@@ -77,6 +82,15 @@
      "dirs": []
     },
     {
+     "path": "notes/06-post-training/preference/",
+     "files": [
+      "notes/06-post-training/preference/01-rm-and-rlhf.md",
+      "notes/06-post-training/preference/02-dpo.md",
+      "notes/06-post-training/preference/self-test.md"
+     ],
+     "dirs": []
+    },
+    {
      "path": "notes/06-post-training/rl/",
      "files": [
       "notes/06-post-training/rl/00-map.md",
@@ -90,6 +104,15 @@
       "notes/06-post-training/rl/08-dapo.md",
       "notes/06-post-training/rl/09-gspo.md",
       "notes/06-post-training/rl/self-test.md"
+     ],
+     "dirs": []
+    },
+    {
+     "path": "notes/06-post-training/sft/",
+     "files": [
+      "notes/06-post-training/sft/01-sft-basics.md",
+      "notes/06-post-training/sft/02-data-and-cot.md",
+      "notes/06-post-training/sft/self-test.md"
      ],
      "dirs": []
     }
@@ -109,7 +132,11 @@
   },
   {
    "path": "notes/08-eval-harness/",
-   "files": [],
+   "files": [
+    "notes/08-eval-harness/00-map.md",
+    "notes/08-eval-harness/01-eval.md",
+    "notes/08-eval-harness/02-harness.md"
+   ],
    "dirs": []
   },
   {

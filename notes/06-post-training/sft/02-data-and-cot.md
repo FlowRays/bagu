@@ -1,0 +1,133 @@
+# SFT 数据：合成、CoT 与 agentic
+
+> SFT 的效果**主要由数据决定**，不是由训练技巧决定。这一篇讲数据侧。
+
+## 1. 一条铁律
+
+$$\boxed{\text{SFT 数据「质 } \gg \text{ 量」}}$$
+
+LIMA 的经典结论：**1000 条精心挑选的数据**，效果好过几十万条噪声数据。
+
+解释（Superficial Alignment Hypothesis）：模型的知识和能力几乎全部在 pretrain 阶段获得，SFT 主要是教它**用什么格式、什么风格、什么行为模式**把已有能力表达出来。既然是学"表达方式"，就不需要太多样本，但样本必须一致且高质量。
+
+这也解释了为什么 SFT 只跑 1–3 个 epoch 就够。
+
+## 2. 数据合成
+
+人工标注太贵，现在主流是模型合成 + 过滤。
+
+| 方法 | 做法 |
+|---|---|
+| **蒸馏强模型** | 用更强的模型生成回答，直接当 SFT target。本质是 [off-policy 蒸馏](../distill/02-sft-and-kd.md#4-从-teacher-采样做-sft--forward-kl-的蒙特卡洛估计)（teacher 采样 + SFT ≈ MC forward KL） |
+| **Self-Instruct** | 少量种子指令 → 让模型自己扩写出更多指令 → 生成回答 → 过滤 |
+| **Evol-Instruct** | 迭代地把指令"进化"得更难（加约束、加深度、具体化） |
+| **拒绝采样（RFT）** | 同一 prompt 采 $n$ 条，用 verifier / RM 挑出正确的当 SFT 数据。**这是最实用的一条** |
+| **Persona / 场景扩展** | 用不同角色、场景改写同一问题，提高多样性 |
+
+### 拒绝采样为什么好用
+
+```text
+prompt → 模型自己采样 n 条 → verifier 判对错 → 只留对的 → SFT
+```
+
+好处：
+- 数据来自**模型自己的分布**，比外部数据更好学（分布更接近，见 [on-policy 的价值](../distill/03-opd.md#2-为什么要-on-policy)）
+- 只要有 verifier（数学答案、代码测试、格式检查）就能自动化
+- 可以反复迭代：SFT → 采样 → 过滤 → 再 SFT
+
+它其实是**最简单的一种 RL**：只保留 reward=1 的样本做 SFT，等价于 advantage 只有 0/1 的 policy gradient。
+
+$$\boxed{\text{拒绝采样是 SFT 和 RL 之间的桥}}$$
+
+## 3. 数据去重与过滤
+
+| 手段 | 说明 |
+|---|---|
+| 精确 / 近似去重 | MinHash、SimHash，防止重复样本被过度学习 |
+| 长度过滤 | 太短没信息，太长可能是噪声 |
+| 质量打分 | 用 RM 或 LLM-as-judge 给每条打分，只留高分 |
+| 多样性采样 | 按 embedding 聚类后均匀采，避免某一类占比过高 |
+| **去污染** | 和评测集做 n-gram 匹配，删掉泄露的样本 |
+
+**去污染必须做**，否则 benchmark 分数没有意义。这是面试很容易问到的诚信问题。
+
+## 4. CoT 数据
+
+让模型先写推理过程再给答案：
+
+```text
+Q: ...
+A: 让我一步步想。首先 ... 其次 ... 所以答案是 42。
+```
+
+### 为什么有效
+
+- **测试时计算量变长**：每个中间 token 都是一次前向，等于给了模型更多"思考步数"
+- **把一个难的映射拆成若干容易的映射**：$x\to y$ 很难，$x\to z_1\to z_2\to y$ 每一步都简单
+- 中间结果写进了 context，后面可以直接引用，相当于外部工作记忆
+
+### 数据怎么来
+
+1. 人工写（贵，质量高）
+2. **强模型生成 + 答案验证**：只保留最终答案正确的推理链。注意这只能保证结果对，**过程可能是错的但蒙对了**
+3. **反向合成（rationalization）**：给模型题目**和答案**，让它补出推理过程。这就是 [OPSD](../distill/06-opsd.md) 里 privileged information 的思路
+4. 过程监督：对每一步单独打分（PRM），成本高但质量最好
+
+### 长 CoT
+
+R1 之后的 reasoning model 会产生几千甚至上万 token 的推理链，包含反思（`wait`、`let me recheck`）、回溯、多路验证。这类数据通常不是 SFT 出来的，而是 **RL 自己涌现**的，SFT 阶段只做 cold start 把格式教会。
+
+$$\boxed{\text{短 CoT 可以 SFT 教；长 CoT 的反思行为主要靠 RL 涌现}}$$
+
+## 5. Agentic SFT
+
+训练模型使用工具、多步交互。样本形态变成：
+
+```text
+user: 帮我查一下明天北京天气并决定要不要带伞
+assistant: <tool_call>{"name":"weather","args":{"city":"北京","date":"..."}}</tool_call>
+tool:      {"temp":18,"rain":true}                      ← 环境返回，不是模型生成
+assistant: 明天北京有雨，建议带伞。
+```
+
+### 关键：loss mask 更复杂
+
+$$\boxed{\text{tool 返回的内容绝对不能算 loss}}$$
+
+它是环境给的观测，不是模型该学着生成的东西。如果算了 loss，模型会开始**幻想工具输出**，在推理时自己编造 observation 而不去真的调用。
+
+所以 mask 规则是：**所有 assistant 段（含 tool_call）算 loss，user 和 tool 段都 mask**。
+
+### 其他要点
+
+- **多轮 = 多段 loss**，一次前向算完（同 [多轮对话](01-sft-basics.md#2-多轮对话怎么算)）
+- **失败轨迹要不要留**：只留成功轨迹容易让模型没见过错误恢复；掺一些"调用失败 → 纠正 → 成功"的轨迹更鲁棒（这和 [OPD 学错误恢复](../distill/03-opd.md#2-为什么要-on-policy) 是同一个道理）
+- **工具定义放 system prompt**，每轮都带着，所以 [prefix caching](../../02-inference-serving/02-serving-optimization.md#3-prefix-caching复用相同前缀的-kv) 在 agent 场景收益特别大
+- 格式必须严格（JSON schema），格式错误会直接导致工具调用失败，可以在 SFT 后用 RL 专门修格式
+
+## 6. 数据配比
+
+最终的 SFT 数据集通常是多个来源的混合：
+
+```text
+通用对话 30%  |  数学 20%  |  代码 20%  |  agentic 15%  |  安全 10%  |  长文本 5%
+```
+
+配比本身是要调的超参。经验：
+
+- 想要的能力，数据占比就要够
+- 但某一类占比过高会挤掉别的能力
+- 通用数据是"地基"，不能太少，否则专项能力上去了但通用能力崩
+
+## 自测
+
+1. ⭐ LIMA 的结论是什么？用 Superficial Alignment Hypothesis 解释。这如何解释 SFT 只跑 1–3 epoch？
+2. 列出五种数据合成方法。
+3. ⭐⭐ 拒绝采样为什么好用？为什么说它是 SFT 和 RL 之间的桥？
+4. 数据过滤有哪些手段？哪一项是诚信问题必须做？
+5. ⭐ CoT 为什么有效？说出三条。
+6. CoT 数据的四种来源？「答案对但过程错」的问题出在哪种？
+7. 长 CoT 的反思行为主要靠什么获得？SFT 在其中的角色是什么？
+8. ⭐⭐ agentic SFT 的 loss mask 规则？tool 返回算 loss 会导致什么后果？
+9. 为什么 agent 场景 prefix caching 收益特别大？
+10. 只留成功轨迹有什么问题？
