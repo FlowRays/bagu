@@ -84,5 +84,5 @@ $$L^{PPO} = \mathbb E\Big[\min\big(r_tA_t,\ \mathrm{clip}(r_t,1-\epsilon,1+\epsi
 
 相关：
 
-- [verl / slime 源码导读](../../code/06-frameworks/rl-framework-source-reading.md) — 这些公式在真实框架里落在哪些文件
+- [verl / slime 源码导读](../../code/06-frameworks/00-map.md) — 这些公式在真实框架里落在哪些文件
 - [蒸馏 / OPD / OPSD](../distill/00-map.md) — reverse KL 为什么**就是** policy gradient，把 RL 和蒸馏接起来

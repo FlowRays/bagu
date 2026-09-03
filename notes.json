@@ -184,7 +184,9 @@
     {
      "path": "notes/code/06-frameworks/",
      "files": [
-      "notes/code/06-frameworks/rl-framework-source-reading.md"
+      "notes/code/06-frameworks/00-map.md",
+      "notes/code/06-frameworks/01-rl-framework-source-reading.md",
+      "notes/code/06-frameworks/02-formula-to-code.md"
      ],
      "dirs": []
     },

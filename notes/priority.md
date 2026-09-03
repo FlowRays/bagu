@@ -123,7 +123,7 @@
 
 ## 优先级 3：框架代码
 
-对应目录 [`code/06-frameworks/`](code/06-frameworks/rl-framework-source-reading.md)
+对应目录 [`code/06-frameworks/`](code/06-frameworks/00-map.md)
 
 - [ ] slime / verl 里 PPO / GRPO / DAPO / GSPO 核心算法的实现位置与细节
 - [ ] 公式 → 代码的逐条对照
