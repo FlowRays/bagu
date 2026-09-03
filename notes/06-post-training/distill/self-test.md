@@ -138,10 +138,12 @@
 > $-\beta D_{KL}(\pi\|\pi_R^*)=\mathbb E_\pi[R]-\beta D_{KL}(\pi\|\pi_{\text{ref}})-\beta\log Z$，最后一项与 $\pi$ 无关。
 > 含义：**KL-regularized RL 本身就在做 sequence-level reverse KL**，只是它的 teacher 分布没有显式模型，由 reward model + reference model 隐式定义。OPD 相当于把这个隐式 teacher 换成真实存在、且能逐 token 给 logprob 的 $\pi_T$。
 
-**26.** 为什么 forward-KL 蒸馏一般不写成 policy gradient？
+**26.** ⭐⭐ 什么时候才必须用 PG？「forward 走 CE、reverse 走 PG」错在哪？
 
-> **答：** forward KL 要优化 $-\sum_v\pi_T(v|s)\log\pi_S(v|s)$，这是标准的 supervised / distillation loss，直接 backprop CE 即可，不涉及"对自己采样的分布求导"。
-> 记：Forward KL → supervised CE；Reverse KL → policy gradient。
+> **答：** 触发条件是 **$\theta$ 出现在「期望所依赖的采样分布」里，且只能采样不能枚举**，两个条件缺一不可。
+> 四格里只有一格要 PG：forward KL 无论枚举还是采样都直接 backprop（采样自 $\pi_T$，与 $\theta$ 无关）；**reverse KL 全词表枚举时也直接 backprop**（就是个处处可导的求和，`.backward()` 即可）；只有**从 $\pi_S$ 采样的 reverse KL** 必须 PG。
+> 实践里看起来是「forward↔CE、reverse↔PG」，是**成本**决定的：选 reverse KL 就是图它只要 $[B,L]$ 而非 $[B,L,V]$，为了省就得采样，于是必须 PG。**是「采样 vs 枚举」决定的，KL 方向只是间接原因。**
+> 详见 [04 第 7 节](04-reverse-kl-as-pg.md#7-卡点到底什么时候才必须用-pg)。
 
 ## E. KL 怎么估（[05](05-kl-estimation.md)）
 

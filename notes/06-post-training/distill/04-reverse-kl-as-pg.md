@@ -139,15 +139,75 @@ $$\boxed{\max_\pi\big\{\mathbb E_\pi[R]-\beta D_{KL}(\pi\|\pi_{\text{ref}})\big\
 
 OPD 相当于把这个隐式 teacher $\pi_R^*$ 换成一个**真实存在、而且能对每个 token 给 logprob** 的 $\pi_T$。这就是 "reverse KL 与 RL 有天然 synergy" 的准确含义。
 
-## 7. 反过来：forward KL 为什么不走 PG
+## 7. 卡点：到底什么时候才必须用 PG
 
-forward KL 要优化的是
+很容易得出一个**错误**的结论：「forward KL 走监督 CE，reverse KL 走 policy gradient」。
+这句话在最常见的那个 recipe 下碰巧成立，但它把因果搞反了。
 
-$$-\sum_v\pi_T(v|s)\log\pi_S(v|s)$$
+### 真正的触发条件
 
-这本质上是一个 **supervised / distillation loss**，直接 backprop CE 就行，不需要 policy gradient 那一套。
+$$\boxed{\theta\ \text{出现在「期望所依赖的采样分布」里，\textbf{并且}只能采样、不能枚举}}$$
 
-$$\boxed{\text{Forward KL}\to\text{supervised CE}}\qquad\boxed{\text{Reverse KL}\to\text{policy gradient}}$$
+两个条件缺一不可。拆开看：
+
+**条件一：$\theta$ 在不在采样分布里。**
+
+$$D_{KL}(\pi_T\|\pi_S)=\mathbb E_{v\sim\pi_T}[\cdots]\qquad D_{KL}(\pi_S\|\pi_T)=\mathbb E_{v\sim\pi_S}[\cdots]$$
+
+forward KL 的期望在 $\pi_T$ 下，**teacher 与 $\theta$ 无关**，采样这一步不携带任何梯度信息，直接对被积函数 backprop 就是无偏的。
+reverse KL 的期望在 $\pi_S$ 下，$\theta$ **既在被积函数里、又在采样分布里**，后面这一半普通 backprop 拿不到。
+
+**条件二：能不能枚举。**
+
+如果能把整个词表加起来，"期望"就退化成一个**确定性的求和**，压根没有采样这一步：
+
+$$D_{KL}(\pi_S\|\pi_T)=\sum_{v\in\mathcal V}\pi_S(v)\log\frac{\pi_S(v)}{\pi_T(v)}$$
+
+这是一个关于 $\theta$ 处处可导的普通表达式，`softmax` → 求和 → `.backward()` 就完事了。
+
+$$\boxed{\textbf{full-vocab reverse KL 不需要 PG}}$$
+
+### 四个格子里只有一个要 PG
+
+| | **全词表枚举** | **采样估计** |
+|---|---|---|
+| **Forward KL** $D(T\|S)$ | 直接 backprop（soft CE） | 从 $\pi_T$ 采，**仍然直接 backprop** |
+| **Reverse KL** $D(S\|T)$ | **直接 backprop** | 从 $\pi_S$ 采，**必须 PG** |
+
+$$\boxed{\text{要 PG 的不是 reverse KL，而是「从 }\pi_\theta\text{ 采样」的 reverse KL}}$$
+
+### 数值验证
+
+$V=5$ 的玩具例子，teacher 固定，student 是 `softmax(z)`：
+
+| 算法 | 梯度 | 与精确值的差 |
+|---|---|---|
+| A. reverse KL 全词表 + 直接 backprop | `[+0.7289 −0.3269 −0.0872 −0.1851 −0.1297]` | — |
+| B. reverse KL 采样 + PG | `[+0.7286 −0.3270 −0.0871 −0.1848 −0.1296]` | $3.8\times10^{-4}$ ✅ |
+| **C. reverse KL 采样 + 天真 backprop** | `[−0.0001 +0.0001 −0.0000 +0.0002 −0.0001]` | $7.3\times10^{-1}$ ❌ |
+| D. forward KL 全词表 | `[+0.5925 −0.1905 −0.5383 +0.1778 −0.0416]` | — |
+| E. forward KL 从 teacher 采样 + 直接 backprop | `[+0.5925 −0.1906 −0.5384 +0.1781 −0.0417]` | $2.9\times10^{-4}$ ✅ |
+
+**C 那一行最说明问题**：天真 backprop 算出来的梯度几乎是 0。因为它恰好只算了
+
+$$\mathbb E_{a\sim p_\theta}\big[\nabla_\theta\log p_\theta(a)\big]=0$$
+
+这一项 —— 正是本篇 [第 2 节](#2-把梯度真正推一遍) 里那个"会消失的第二项"。真正携带信息的第一项（**分布本身怎么随 $\theta$ 移动**）被完全漏掉了。PG 补的就是它。
+
+### 那为什么实践中还是「forward↔CE、reverse↔PG」
+
+因为**成本**把选择绑死了（见 [KL 估计粒度](05-kl-estimation.md)）：
+
+- reverse KL 的卖点就是**便宜** —— 只要 teacher 给采样 token 的一个标量 logprob，$[B,L]$ 而不是 $[B,L,V]$。既然选它就是为了省，自然走采样，于是必须 PG。
+- 用全词表算 reverse KL 数学上完全可以，但那就丢掉了它相对 forward KL 的全部成本优势，没人这么干。
+
+$$\boxed{\text{是「采样 vs 枚举」这个工程选择决定要不要 PG，KL 的方向只是间接原因}}$$
+
+### 旁证：连续动作里 reverse KL 也不走 PG
+
+diffusion / flow policy 的动作是连续的，可以**重参数化**（$x=\mu_\theta+\sigma_\theta\epsilon$），采样变成可导操作，梯度能直接穿过去。所以那边即使"从自己的分布采样"也不需要 score function。
+
+$$\boxed{\text{离散 token 无法重参数化，才是 LLM 侧非 PG 不可的根本原因}}$$
 
 ## 自测（口述版）
 
@@ -192,8 +252,11 @@ $$\boxed{\text{Forward KL}\to\text{supervised CE}}\qquad\boxed{\text{Reverse KL}
 > 最后一项与 $\pi$ 无关，所以两个优化问题等价。
 > 含义：**KL-regularized RL 本身就在做 sequence-level reverse KL**，只是它的 teacher 分布没有显式模型，而由 reward model + reference model 隐式定义。OPD 相当于把这个隐式 teacher 换成真实存在、且能逐 token 给 logprob 的 $\pi_T$。
 
-**7.** 为什么 forward-KL 蒸馏一般不写成 policy gradient？
+**7.** ⭐⭐ 到底什么时候才必须用 PG？「forward 走 CE、reverse 走 PG」这句话错在哪？
 
-> **答：** forward KL 要优化的是 $-\sum_v\pi_T(v|s)\log\pi_S(v|s)$，这是标准的 **supervised / distillation loss**，直接对它 backprop 就行，不涉及「对自己采样的分布求导」这个难点。
-> 记：**Forward KL → supervised CE；Reverse KL → policy gradient。**
+> **答：** 触发条件是 **$\theta$ 出现在「期望所依赖的采样分布」里，且只能采样不能枚举**，两个条件缺一不可。
+> 四个格子里**只有一个要 PG**：forward KL 无论枚举还是采样都直接 backprop（因为从 $\pi_T$ 采，与 $\theta$ 无关）；**reverse KL 全词表枚举时也直接 backprop**（就是个处处可导的求和）；只有**从 $\pi_S$ 采样的 reverse KL** 才必须 PG。
+> 所以准确说法是「**从 $\pi_\theta$ 采样的** reverse KL 要 PG」，不是「reverse KL 要 PG」。
+> 实践中之所以看起来是「forward↔CE、reverse↔PG」，是**成本**决定的：选 reverse KL 就是图它只要 $[B,L]$ 而不是 $[B,L,V]$，既然为了省就必然走采样，于是必须 PG。
+> 旁证：连续动作（diffusion/flow policy）可以**重参数化**，即使从自己的分布采样也不需要 PG —— **离散 token 无法重参数化**，才是 LLM 侧非 PG 不可的根本原因。
 
