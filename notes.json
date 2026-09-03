@@ -17,12 +17,22 @@
   },
   {
    "path": "notes/03-training-fundamentals/",
-   "files": [],
+   "files": [
+    "notes/03-training-fundamentals/01-memory-accounting.md",
+    "notes/03-training-fundamentals/02-gradient-checkpointing.md",
+    "notes/03-training-fundamentals/03-gradient-accumulation.md",
+    "notes/03-training-fundamentals/04-packing-and-grad-clip.md",
+    "notes/03-training-fundamentals/self-test.md"
+   ],
    "dirs": []
   },
   {
    "path": "notes/04-distributed-infra/",
-   "files": [],
+   "files": [
+    "notes/04-distributed-infra/01-ddp-and-zero.md",
+    "notes/04-distributed-infra/02-parallelism-map.md",
+    "notes/04-distributed-infra/03-model-param-breakdown.md"
+   ],
    "dirs": []
   },
   {
@@ -32,7 +42,9 @@
   },
   {
    "path": "notes/06-post-training/",
-   "files": [],
+   "files": [
+    "notes/06-post-training/memory-sft-opd-rl.md"
+   ],
    "dirs": [
     {
      "path": "notes/06-post-training/distill/",
@@ -70,7 +82,14 @@
   },
   {
    "path": "notes/07-vlm/",
-   "files": [],
+   "files": [
+    "notes/07-vlm/00-map.md",
+    "notes/07-vlm/01-architecture.md",
+    "notes/07-vlm/02-vision-encoder.md",
+    "notes/07-vlm/03-visual-token-compression.md",
+    "notes/07-vlm/04-training-stages.md",
+    "notes/07-vlm/self-test.md"
+   ],
    "dirs": []
   },
   {

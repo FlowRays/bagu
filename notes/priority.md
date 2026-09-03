@@ -34,11 +34,30 @@
 
 ## 优先级 2：VLM
 
-对应目录 `07-vlm/`
+对应目录 [`07-vlm/`](07-vlm/00-map.md)
 
-- [ ] **Vision architecture**：Qwen3 / Qwen3.5 的视觉部分，视觉信息如何进入 LLM
-- [ ] **VLM 训练阶段划分**：各阶段冻结什么、优化什么
-- [ ] **VLM SFT loss 设计**：Vision Encoder 不冻结时，分阶段各用什么 loss
+- [x] **Vision architecture**：image → ViT → projector → LLM，visual token，统一 self-attention
+- [x] **Vision Encoder**：CLIP / SigLIP / SigLIP2 / DINO，Qwen3-VL / Qwen3.5 / Kimi K3 / DeepSeek-V4-Flash-Vision 配置，为什么不 scale vision encoder
+- [x] **visual token 压缩**：2×2 merge、3×3 aligner、resampler、pruning、token budget
+- [x] **VLM 训练阶段划分**：Stage −1/0/1 → SFT → distill → RL，各阶段冻结什么、更新什么
+- [x] **VLM SFT loss 设计**：三个模块共享一个 loss，语言 CE 怎么反传到 ViT，RL 为什么倾向 freeze ViT
+
+自测题库：[07-vlm/self-test.md](07-vlm/self-test.md)（36 题）
+
+## 优先级 2b：显存 / 训练工程 / 分布式
+
+对应目录 [`03-training-fundamentals/`](03-training-fundamentals/01-memory-accounting.md)、[`04-distributed-infra/`](04-distributed-infra/01-ddp-and-zero.md)
+
+- [x] **显存账本**：2/4 byte 从哪来、12 vs 16 B/param、activation、logits
+- [x] **Gradient Checkpointing**：实现粒度、省多少、增加 33%
+- [x] **Gradient Accumulation**：等价性、token normalization 坑、和 checkpointing 的区别
+- [x] **Sequence packing / gradient clipping**
+- [x] **DDP → ZeRO-1/2/3 → FSDP1/FSDP2**：通信量 2M/2M/3M
+- [x] **并行全图**：DP/TP/PP/SP/CP/EP 各切什么维度，8 卡怎么排
+- [x] **大模型参数构成**：MoE 占 98%，total vs activated
+- [x] **SFT / OPD / GRPO / PPO 显存对比**
+
+自测题库：[03-training-fundamentals/self-test.md](03-training-fundamentals/self-test.md)（52 题）
 
 ## 优先级 3：框架代码
 
