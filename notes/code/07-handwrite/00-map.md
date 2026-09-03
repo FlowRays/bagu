@@ -5,6 +5,11 @@
 > KV cache 增量 ≡ 整段 causal attention、反向传播 ≡ 数值梯度、AUC ≡ 暴力枚举）。
 
 > 题目清单参考 sspoffer 的公开题单（<https://sspoffer.com/oj/48>），**题解是自己写的**，和原站无关。
+>
+> 深度学习和大模型两册的每道题都给了 **NumPy 和 PyTorch 两个版本**，两者逐个对拍过数值。
+
+> **Python / NumPy / PyTorch 不熟？** 先看 [给 C++ 选手的 Python 速成](../01-python-pytorch/00-map.md)，
+> 那两篇把这里用到的每一个 API 和每一个与 C++ 冲突的直觉都讲了。
 
 ## 分册
 

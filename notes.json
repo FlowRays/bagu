@@ -103,7 +103,11 @@
    "dirs": [
     {
      "path": "notes/code/01-python-pytorch/",
-     "files": [],
+     "files": [
+      "notes/code/01-python-pytorch/00-map.md",
+      "notes/code/01-python-pytorch/01-numpy-for-cpp.md",
+      "notes/code/01-python-pytorch/02-torch-for-cpp.md"
+     ],
      "dirs": []
     },
     {
