@@ -138,19 +138,19 @@
 > $-\beta D_{KL}(\pi\|\pi_R^*)=\mathbb E_\pi[R]-\beta D_{KL}(\pi\|\pi_{\text{ref}})-\beta\log Z$，最后一项与 $\pi$ 无关。
 > 含义：**KL-regularized RL 本身就在做 sequence-level reverse KL**，只是它的 teacher 分布没有显式模型，由 reward model + reference model 隐式定义。OPD 相当于把这个隐式 teacher 换成真实存在、且能逐 token 给 logprob 的 $\pi_T$。
 
-**26.** ⭐⭐⭐ 把 SFT 和 OPD（reverse KL）的梯度都推到 logits 层面，说明为什么一个不用 PG、一个必须用。
+**26.** ⭐⭐⭐ 为什么 SFT 的 loss 求导不用 PG，而 OPD 的 reverse KL 需要？
 
-> **答：** 记 $\dfrac{\partial\log\pi_S(v)}{\partial z_k}=\delta_{vk}-\pi_S(k)$，$\dfrac{\partial\pi_S(v)}{\partial z_k}=\pi_S(v)(\delta_{vk}-\pi_S(k))$，核心恒等式 $\sum_v\pi_S(v)(\delta_{vk}-\pi_S(k))=0$。
+> **答：** 把被求和的那一项摆出来看。
+> SFT $-\log\pi_S(y^*)$、forward KL $\sum_v\pi_T(v)[-\log\pi_S(v)]$ —— **权重（标签 / $\pi_T$）是数据集和 teacher 给的死数**，student 怎么变都不变。
+> reverse KL $\sum_v\pi_S(v)\log\frac{\pi_S(v)}{\pi_T(v)}$ —— **student 出现了两次**：一次在外面当权重，一次在 log 里面。
 >
-> **SFT**：$L=-\log\pi_S(y^*)\Rightarrow\nabla_z L=\pi_S-e_{y^*}$。**Forward KL**：$L=-\sum_v\pi_T(v)\log\pi_S(v)\Rightarrow\nabla_z L=\pi_S-\pi_T$（$\pi_T$ 全程当常数拎出，从未被求导）。
+> 出现两次就必须用乘法法则：$\nabla[\pi_S r]=\underbrace{\nabla\pi_S\cdot r}_{(I)}+\underbrace{\pi_S\nabla r}_{(II)}$。SFT / forward KL 只有 (II)（权重是常数，(I) 不存在）；reverse KL 两项都有，而 $(II)=\sum_v\pi_S\nabla\log\pi_S=\sum_v\nabla\pi_S=\nabla 1=0$，所以**梯度全在 (I)**，和 SFT 恰好相反。
 >
-> **Reverse KL**：$L=\sum_v\pi_S(v)r(v)$，$r=\log\frac{\pi_S}{\pi_T}$。乘法法则两项：(II) $=\sum_v\pi_S(v)(\delta_{vk}-\pi_S(k))=0$ 精确消掉；(I) $=\pi_S(k)r(k)-\pi_S(k)\sum_v\pi_S(v)r(v)$，得 $\boxed{\nabla_{z_k}L=\pi_S(k)\big(r(k)-D_{KL}(\pi_S\|\pi_T)\big)}$。注意 baseline $-D_{KL}$ 是 softmax Jacobian 自己长出来的，不是手工加的。
+> **全词表时不需要 PG**：代码里 `p * (p.log()-q.log())` 的 $p$ 有两条路通向 loss，乘法法则是 autograd 自己会做的事。
+> **采样时必须 PG**：$a$ 是个整数 token id，「为什么刚才更容易抽到 $a$」这条边断了，权重 $\pi_S$ 被藏进"这个 token 被抽到的概率"里，autograd 只剩 (II)，而 $\mathbb E[\nabla\log\pi_S]=0$ —— **loss 数值无偏，梯度期望为零，模型不动**。
+> PG 用 $\nabla\pi=\pi\nabla\log\pi$ 把 (I) 重写成 $\mathbb E_{v\sim\pi_S}[r(v)\nabla\log\pi_S(v)]$，就能采样估；代码里靠 surrogate $\tilde L=\operatorname{sg}[r-b]\cdot\log\pi_S$（数值无意义，只有梯度有意义）。
 >
-> **分水岭**：写成 $L=\sum_v w(v)f_\theta(v)$，SFT/forward KL 的权重 $w$ 与 $\theta$ 无关 $\Rightarrow$ (I) 不存在，梯度全在 (II)；reverse KL 的 $w=\pi_S$ 含 $\theta$ $\Rightarrow$ 梯度全在 (I)。**两者恰好互换。**
->
-> **为什么采样后必须 PG**：$\hat L=\frac1N\sum_i r(v_i)$ 的**值无偏**，但 $v_i$ 是常数下标，权重 $\pi_S$ 被"哪些下标被抽中"吸收，autograd 只算得到 (II)，而 $\mathbb E[\partial\hat L/\partial z_k]=\pi_S(k)-\pi_S(k)=0$ —— 梯度是零的无偏估计，纯噪声（症状：loss 数值正常，模型不动）。PG 用 $\nabla\pi_S=\pi_S\nabla\log\pi_S$ 把 (I) 改写成 $\mathbb E_{v\sim\pi_S}[r(v)\nabla\log\pi_S(v)]$，可以采样估；代码里用 surrogate $\tilde L=\frac1N\sum_i\text{sg}[r(v_i)-b]\log\pi_S(v_i)$。
->
-> forward KL 采样时从 $\pi_T$ 采（与 $\theta$ 无关），本来就没有 (I)，所以什么都不丢。详见 [04 第 7 节](04-reverse-kl-as-pg.md#7-完整梯度推导sft-与-opd-从-logits-一路推到底)。
+> 详见 [04 第 7 节](04-reverse-kl-as-pg.md#7-sft-与-opd-的梯度为什么一个要-pg一个不要)。
 
 **27.** ⭐ OPD 的三档 KL 估计是什么？各自的取舍？
 

@@ -213,7 +213,7 @@ $$\sum_v\pi(v)\big(\delta_{vk}-\pi(k)\big)=0\qquad\text{(式 3，消项全靠它
 2. 看到 $\sum_v(\cdots)\delta_{vk}$ → 删掉求和号，把 $v$ 换成 $k$
 3. 看到 $\sum_v\pi(v)\times(\text{跟 }v\text{ 无关的东西})$ → 概率和为 1，直接提出来
 
-接着看 [reverse KL 就是 policy gradient 的第 7 节](04-reverse-kl-as-pg.md#7-完整梯度推导sft-与-opd-从-logits-一路推到底)，那里就是把这三个式子反复用在 SFT / forward KL / reverse KL 上。
+接着看 [reverse KL 就是 policy gradient 的第 7 节](04-reverse-kl-as-pg.md#7-sft-与-opd-的梯度为什么一个要-pg一个不要)，那里就是把这三个式子反复用在 SFT / forward KL / reverse KL 上。
 
 ## 自测（口述版）
 
