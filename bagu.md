@@ -118,7 +118,8 @@
                 - ppo
                     - 
                 - grpo
-                - dapo, gspo
+                - dapo, gspo, sapo
+                - production recipe: kimi k2.5/k3, glm icepop, qwen 时间线
             - agentic rl
                 - reward design
                 - credit assignment

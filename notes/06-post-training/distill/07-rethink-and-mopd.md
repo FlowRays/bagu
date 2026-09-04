@@ -141,7 +141,10 @@ Answer:
 
 ## 二、MOPD：Multi-Teacher OPD
 
-> 注意歧义：2026 年有两篇都叫 MOPD。这里说的是 Xiaomi MiMo 的 **Multi-Teacher OPD**；另一篇是 Microsoft 的 **Multi-Rollout OPD**。
+> 注意歧义：**MOPD 这个缩写现在指三样东西**。
+> - Xiaomi MiMo 的 **Multi-Teacher OPD** —— 本节讲的就是它
+> - Microsoft 的 **Multi-Rollout OPD** —— 完全不同的东西
+> - Kimi K3 也叫 **Multi-Teacher On-Policy Distillation** —— 同一个想法的另一次实现，见 [第三节](#三kimi-k3-的-mopd把-9-个-expert-合回一个模型)
 
 ### 1. 做法
 
@@ -213,7 +216,82 @@ $$\boxed{\text{MOPD 的设计天然满足 Rethink OPD 总结出的两个成功�
 
 这也解释了为什么"找一个 benchmark 更强的巨大外部 teacher"未必比"从自己 checkpoint RL 出来的 teacher"更好。
 
-## 三、面试版
+## 三、Kimi K3 的 MOPD：把 9 个 expert 合回一个模型
+
+> 同一个想法的第三次出现。K3 用它把 [3 domain × 3 effort 训出的 9 个 RL expert](../rl/11-kimi-k25-k3.md#10-改动七单一-rl-policy--9-个-specialized-policy) 合并成一个统一模型。
+> teacher 的选择规则从"哪个 domain 的题"变成"**哪个 domain + 哪个 effort 档位**"，算法本身没变。
+
+### 1. 只算 sampled token，不是全词表、也不是 top-k
+
+K3 的公式里**没有对词表求和**，只访问 student 实际采到的那一维：
+
+$$\boxed{r_t^{OPD}=\mathrm{clip}\Big(\mathrm{sg}\Big[\log\frac{\pi_T(y_t\mid x,y_{<t})}{\pi_S(y_t\mid x,y_{<t})}\Big],\ -R_{\max},\ R_{\max}\Big)}$$
+
+teacher 只需要返回 $\log\pi_T(y_t|s_t)$，student 返回 $\log\pi_S(y_t|s_t)$，做个差。对比一下如果是全词表：
+
+$$\sum_{v\in V}\pi_T(v|s_t)\log\frac{\pi_T(v|s_t)}{\pi_S(v|s_t)}\qquad\text{或 soft CE}\quad -\sum_{v\in V}\pi_T(v|s_t)\log\pi_S(v|s_t)$$
+
+这需要 teacher/student 对整个 $|V|=160\text{K}$ 词表的分布做监督。**K3 的公式完全没有这个求和。** 在 2.8T 模型 + 超长 agent trajectory 上，sampled-token 便宜太多。
+
+**top-k 呢？** 论文说他们**确实实验过** top-$k$ distillation objective，但在收敛速度和最终性能上**都没有观察到明显优势**，所以最终还是用 sampled-token。
+
+$$\boxed{\text{whole vocab}\ \times}\qquad\boxed{\text{top-}k\ \times\ \text{（试过，没收益）}}\qquad\boxed{\text{student sampled token}\ \checkmark}$$
+
+> 这也解释了为什么 K3 把它写成 **RL reward** 而不是普通的 soft distillation loss：$y_t\sim\pi_S$ 之后，teacher 只回答"**student 已经选了这个 token，我觉得这个选择有多好？**"，于是 $r_t=\log\pi_T(y_t)-\log\pi_S(y_t)$ 直接成为一个 **token-level dense reward**。
+
+$$\boxed{\text{K3 MOPD}=\text{student rollout}+\text{teacher 给 sampled token 打分}+\text{log-prob ratio 当 reward}}$$
+
+### 2. 为什么要 clip，clip 的是什么
+
+$\tilde r_t=\log\pi_T-\log\pi_S$ 是**无界**的。两个方向都会爆：
+
+- $\pi_S(y_t)=10^{-6}$、$\pi_T(y_t)=0.1$ $\Rightarrow$ $r_t=\log10^5\approx+11.5$
+- $\pi_S(y_t)=0.1$、$\pi_T(y_t)=10^{-10}$ $\Rightarrow$ $r_t=\log10^{-9}\approx-20.7$
+
+一个 token 就可能拿到 $|A_t|\approx20$，梯度远大于其他正常 token。而 K3 的 trajectory 有 $10^5\sim10^6$ 个 context token，出现这种 outlier 的概率很高：
+
+```text
+99.9% 的 token:   r = -1, 0.3, 0.7, 1.2 ...
+某一个 token:     r = -25          ← 支配了整个 batch 的梯度
+```
+
+所以直接截断（下表的 $R_{\max}=5$ 只是举例，论文没公开具体取值）：
+
+| 原始 OPD reward | clip 后 |
+|---:|---:|
+| $+0.3$ | $+0.3$ |
+| $+2$ | $+2$ |
+| $+13$ | **$+5$** |
+| $-1$ | $-1$ |
+| $-30$ | **$-5$** |
+
+> teacher 可以说"这个 token 很好 / 很差"，但**不能因为一个 token 上的极端概率差异，让整个 batch 的梯度被它绑架**。
+
+论文直接把它称作限制 **extreme advantage signals**。
+
+### 3. 为什么 clip 的是 log-ratio 而不是 probability ratio
+
+因为 OPD 本身来自 reverse KL：
+
+$$D_{KL}(\pi_S\|\pi_T)=\mathbb E_{y\sim\pi_S}\Big[\log\frac{\pi_S(y)}{\pi_T(y)}\Big]$$
+
+所以想要的 PG reward 天然就是 $r_t=-\log\frac{\pi_S}{\pi_T}=\log\frac{\pi_T}{\pi_S}$，**本来就在 log-probability space**。而且 log 已经把尺度压缩了一个量级：$\frac{\pi_T}{\pi_S}=10^5$ 时 ratio 是 100000，log-ratio 只有 11.5，再做 $\mathrm{clip}(\cdot,-R_{\max},R_{\max})$ 就非常稳。
+
+### 4. clip 的代价
+
+不 clip 时它更接近严格的 $D_{KL}(\pi_S\|\pi_T)$ 优化。clip 之后，$|\log\pi_T-\log\pi_S|>R_{\max}$ 的部分都被压平：
+
+$$\boxed{\text{variance / instability}\downarrow}\qquad\text{但}\qquad\boxed{\text{bias}\uparrow}$$
+
+teacher 和 student 分歧极大的 token 不会再获得无限大的纠正力量。本质是 $\boxed{\text{用一点 bias 换 stability}}$。
+
+### 5. ⚠️ 别和 RL optimizer 的 clip 混
+
+$$\boxed{\underbrace{\mathrm{clip}(\log\pi_T-\log\pi_S)}_{\text{MOPD：限制 teacher 的监督信号}}}\qquad\text{vs}\qquad\boxed{\underbrace{\mathrm{clip/mask}(\pi_\theta/\pi_{old})}_{\text{RL optimizer：限制 off-policy drift}}}$$
+
+**完全不是一回事**，详见 [K3 的三层 clip](../rl/11-kimi-k25-k3.md#12--最容易混的两个-clip)。
+
+## 四、面试版
 
 **Rethink OPD**
 
@@ -222,6 +300,10 @@ $$\boxed{\text{MOPD 的设计天然满足 Rethink OPD 总结出的两个成功�
 **MOPD**
 
 > 先从同一个 SFT checkpoint 分别训练多个 domain RL specialist，再用 multi-teacher OPD 把这些能力蒸馏回统一 student，把"能力生产"和"能力集成"解耦；同源 teacher 又天然保证较高的 policy overlap。
+
+**Kimi K3 的 MOPD**
+
+> K3 按 3 domain × 3 reasoning effort 训出 9 个 RL expert，再用 MOPD 合回一个模型。它的 token reward 只算 **student 实际采样到的那个 token** 的 teacher/student log-prob 差（不是全词表、也不是 top-$k$ —— 论文说 top-$k$ 试过但没有明显收益），并做 $\pm R_{\max}$ 截断来限制 extreme advantage signal。注意这个 clip 和 RL optimizer 里 clip $\pi_\theta/\pi_{old}$ 的那个是完全不同的两件事。
 
 ## 自测（口述版）
 
@@ -263,3 +345,23 @@ $$\boxed{\text{MOPD 的设计天然满足 Rethink OPD 总结出的两个成功�
 > **答：** 因为 $T_d=\pi_0\xrightarrow{\text{domain RL}}\pi_{T_d}$，与 student（也来自 $\pi_0$）**天生 thinking pattern 高度兼容**（满足条件 ①）；同时 domain RL 又赋予了 teacher **真正的新能力**（满足条件 ②）。
 > **恰好同时满足 Rethink OPD 总结出的两个成功条件**，所以设计上天然合理。这也解释了为什么「找一个 benchmark 更强的巨大外部 teacher」未必比「从自己 checkpoint RL 出来的 teacher」更好。
 
+**8.** ⭐ K3 的 MOPD 是全词表、top-$k$ 还是 sampled token？
+
+> **答：** **sampled token**。公式里没有对词表求和，只访问 student 实际采到的 $y_t$ 那一维：teacher 返回 $\log\pi_T(y_t|s_t)$、student 返回 $\log\pi_S(y_t|s_t)$，做差。
+> 全词表要对 $|V|=160\text{K}$ 做监督，在 2.8T 模型 + 超长 agent trajectory 上太贵。**top-$k$ 他们确实试过，但收敛速度和最终性能都没有明显优势**，所以没用。
+> 这也是为什么 K3 把它写成 RL reward 而不是 soft distillation loss：teacher 只回答"student 已经选了这个 token，这个选择有多好"。
+
+**9.** ⭐⭐ MOPD 的 reward 为什么要 clip？clip 的是什么？代价是什么？
+
+> **答：** 因为 $\log\pi_T-\log\pi_S$ **无界**，两个方向都会爆：$\pi_S=10^{-6}$、$\pi_T=0.1$ 给出 $+11.5$；$\pi_S=0.1$、$\pi_T=10^{-10}$ 给出 $-20.7$。K3 的 trajectory 有 $10^5\sim10^6$ token，出 outlier 的概率很高，一个 $r=-25$ 的 token 就能支配整个 batch 的梯度。
+> clip 的对象是 **teacher/student 的 log-prob 差**（论文称之为限制 extreme advantage signals），$\mathrm{clip}(\mathrm{sg}[\cdot],-R_{\max},R_{\max})$。
+> 代价：不 clip 时更接近严格的 $D_{KL}(\pi_S\|\pi_T)$ 优化，clip 后分歧极大的 token 不再获得无限纠正力量 —— **variance↓ 但 bias↑，用一点 bias 换 stability**。
+
+**10.** 为什么 clip 的是 log-ratio 而不是 probability ratio？
+
+> **答：** 因为 OPD 来自 reverse KL $D_{KL}(\pi_S\|\pi_T)=\mathbb E_{\pi_S}[\log\frac{\pi_S}{\pi_T}]$，想要的 reward 天然就是 $\log\frac{\pi_T}{\pi_S}$，**本来就在 log-probability space**。而且 log 先压了一个量级：$\pi_T/\pi_S=10^5$ 时 ratio 是 100000，log-ratio 只有 11.5，再截断就很稳。
+
+**11.** ⭐⭐ 说出 K3 里两个（三个）clip 的区别。
+
+> **答：** ① **MOPD reward clip**：$\mathrm{clip}(\mathrm{sg}[\log\pi_T-\log\pi_S],-R_{\max},R_{\max})$，限制 **teacher 给的监督信号**；② **off-policy mask**：$\mathrm{mask}(\pi_\theta/\pi_{old})$，限制 **当前 policy 与 rollout policy 的偏离**；③ $-\tau(\log\pi_\theta/\pi_{old})^2$ 软约束。
+> ① 管 teacher 和 student 的差，②③ 管 $\theta$ 和 $old$ 的差，**目的完全不同**。

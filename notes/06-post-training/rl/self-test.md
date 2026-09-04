@@ -383,37 +383,190 @@
 
 **75.** GSPO 质疑 GRPO 的什么？
 
-> **答：** 质疑 **reward 明明是 sequence-level 的，importance sampling 却在 token-level 做**。GRPO 给每个 token 单独算 ratio 并单独 clip，但真正获得 reward 的对象是整条 response。
+> **答：** 质疑 **reward/advantage 是 sequence-level 的，importance ratio 和 clip 却在 token-level 做**。同一条 response 内所有 token 共享一个 $A_i$，但 GRPO 让它们各自带一个 $\rho_{i,t}$，token 之间的权重差异完全来自 $\pi_\theta/\pi_{old}$ 的波动，不是 reward 给的信息。
 
-**76.** sequence-level ratio 怎么写？为什么要长度归一化？可以理解成什么平均？
+**76.** ⭐ 用 $\rho=[0.5,1,2]$ 说明 GRPO 的问题，以及 GSPO 怎么处理。
 
-> **答：** $r_i^{seq}=\exp\big[\frac{1}{|y_i|}\sum_t\log\frac{\pi_\theta(y_{i,t}|\cdot)}{\pi_{old}(y_{i,t}|\cdot)}\big]$。长度归一化是为了防止长序列上连乘导致数值爆炸。可以理解成**每个 token ratio 的几何平均**。
+> **答：** 三 token 的回答整条答对 $A=+1$。GRPO 下三个 token 的梯度系数就是 $0.5/1/2$，token 3 拿到 token 1 的 **4 倍**学习信号 —— 但 reward 只说了"整条不错"，这个差异不是 reward 给的信息。GSPO 先算几何平均 $s=(0.5\cdot1\cdot2)^{1/3}=1$，三个 token 统一乘 $1\cdot A$。
 
-**77.** GRPO 和 GSPO 的 clip 分别在什么粒度？
+**77.** 写出 $s_i$，为什么要 $1/T$ 次方？这带来什么理论上的让步？
 
-> **答：** GRPO 在**每个 token** 上算 ratio 并分别 clip（问"这个 token 变太多了吗"）；GSPO 在**整条 sequence** 上算一个 ratio 并在 sequence level clip（问"这整个回答相对 old policy 变化太大了吗"）。
+> **答：** $s_i=\exp\big[\frac1T\sum_t(\log\pi_\theta(y_t)-\log\pi_{old}(y_t))\big]$，即 token ratio 的**几何平均**。$1/T$ 是长度归一化：log-ratio 之和随长度线性增长，不归一化时长序列 ratio 会指数偏离 1，统一的 $\epsilon$ 就没意义了。
+> 让步：**开了 $1/T$ 次方后它不再是严格的 sequence importance ratio** $\pi_\theta(y)/\pi_{old}(y)$，GSPO 本质是一个更稳定的 surrogate objective，而不是"理论上更正确的 IS"。
 
-**78.** 为什么说"把整条 sequence 当 action"更自然？
+**78.** GRPO 和 GSPO 的 clip 分别在什么粒度？
 
-> **答：** 从 MDP 表述上把 token 当 action 也可以，但 reward $R(y)$ 往往只在整个 response 完成后才产生（数学答案对/错），真正获得 reward 的对象更像是整条 reasoning trajectory。既然如此，policy correction / clipping 也应该贴近 trajectory-level。Qwen 团队称这样训练更稳定，对 MoE RL 尤其明显。
+> **答：** GRPO 在**每个 token** 上算 ratio 并分别 clip（问"这个 token 变太多了吗"）；GSPO 在**整条 sequence** 上算一个 $s_i$ 并在 sequence level clip（问"这整个回答相对 old policy 变化太大了吗"），要么整条被截断、要么整条不被截断。
 
-## J. 整体串讲（压轴）
+**79.** ⭐ 写出 GSPO 的梯度，和 GRPO 并排比较。
 
-**79.** ⭐⭐ **把 PPO → GRPO → DAPO → GSPO 的演化线讲一遍**，说明每一步改的是什么。
+> **答：** $\nabla_\theta J_{GSPO}=\frac{sA}{T}\sum_t\nabla_\theta\log\pi_\theta(y_t)$，对照 $\nabla_\theta J_{GRPO}\sim\frac AT\sum_t\rho_t\nabla_\theta\log\pi_\theta(y_t)$。
+> 推导：$\nabla e^f=e^f\nabla f$，$\pi_{old}$ 与 $\theta$ 无关，所以 $\nabla s=\frac sT\sum_t\nabla\log\pi_\theta(y_t)$。
+> 差别只有系数：GRPO 每个 token 是 $\rho_tA$，GSPO 每个 token 都是 $sA$。**GSPO 仍然逐 token 反传**，不是"不对 token 求梯度"。
+
+**80.** $A>0$、$\epsilon=0.2$、$s=0.5$，会被 clip 吗？
+
+> **答：** **不会。** $\min(0.5A,0.8A)=0.5A$，仍有梯度。一个好答案的概率反而掉到 0.5 倍，正是最该被拉回来的情况。clip 只阻止"往 reward 希望的方向走太远"。
+
+**81.** ⭐ 为什么 GSPO 对 MoE 收益特别大？以前怎么解决的？
+
+> **答：** MoE 每个 token 过 router，微小数值误差就可能让训练 forward 选到与 rollout 不同的专家（Expert 17→18），token 概率 $0.10\to0.08$ 这类抖动直接变成 $\rho_t=0.8$ 的梯度权重噪声，甚至触发 clip。GSPO 把这些波动在 $\frac1T\sum_t\log\rho_t$ 里平均掉，$s\approx1$。
+> 以前的解法是 **Routing Replay**：缓存 rollout 时激活的专家，训练 forward 时强行复现相同 routing。GSPO 不需要它。
+
+**82.** GSPO 被 clip 的 token 比例反而高两个数量级，为什么效果还更好？
+
+> **答：** 那个比例是"sequence 被 clip → 整条所有 token 都计为 clipped"算出来的，天然偏高。结论是 **更多 gradient ≠ 更有效 gradient**：GRPO 保留的大量 token gradient 里混着很多 noisy 的 token-level importance weight，GSPO 以 sequence 为单位整条过滤，剩下的信号更干净。
+
+**83.** ⭐ 为什么不能说"PPO 的 token-level importance sampling 是错的"？
+
+> **答：** 标准 PPO 里每个 timestep 有自己的 advantage $A_t$，token ratio 配 token advantage 是自洽的。GSPO 针对的是 **GRPO 那种「sequence reward → 所有 token 共享一个 $A$」+ token-level ratio** 的特定组合。说死会被追问。
+
+**84.** GSPO 的 sequence-level ratio 和 DAPO 的 token-level loss 冲突吗？
+
+> **答：** **不冲突**，改的是公式里两个不同位置。GSPO 改 **ratio 的粒度**；DAPO 改 **loss 在 batch 内怎么聚合**（$\frac1G\sum_i\frac1{|y_i|}\sum_t\to\frac1N\sum_{i,t}$）。
+
+## J. SAPO（[10](10-sapo.md)）
+
+**85.** SAPO 想解决 GSPO 的什么问题？
+
+> **答：** GSPO 一旦 sequence ratio 越界，**整条 response 的梯度全部归零**。一条 1000-token 的回答里可能只有十几个 token 因 MoE routing / 数值误差非常 off-policy，却害得 1000 个 token 一起没梯度。**一颗老鼠屎，整锅汤倒掉。**
+
+**86.** ⭐ SAPO 用的是 token-level 还是 sequence-level ratio？三者怎么区分？
+
+> **答：** **token-level**，和 GRPO 一样的 $r_{i,t}=\pi_\theta(y_{i,t})/\pi_{old}(y_{i,t})$。
+> GRPO = token ratio + hard clip；GSPO = sequence ratio + hard clip；**SAPO = token ratio + soft gate**。
+
+**87.** ⭐⭐ 写出 $f(r)$，推出 $w(r)$，说明 $r=1$ 时 $w$ 是多少。
+
+> **答：** $f(r)=\frac4\tau\sigma(\tau(r-1))$。令 $p=\sigma(\tau(r-1))$，$\frac{dp}{dr}=\tau p(1-p)$，所以 $\frac{df}{dr}=\frac4\tau\cdot\tau p(1-p)=4p(1-p)=w(r)$。
+> $r=1\Rightarrow p=0.5\Rightarrow w=1$（完整保留梯度）；$r\gg1$ 或 $r\ll1$ 时 $p\to1$ 或 $0$，$w\to0$。
+> 梯度：$\nabla J\sim w(r_t)\,r_t\,A_t\,\nabla\log\pi_\theta(y_t)$，有效权重是 $w(r_t)r_tA$ 而不是 $r_tA$。
+
+**88.** SAPO 退回 token ratio，不就又回到 GSPO 批评的问题了吗？
+
+> **答：** 不是。GRPO 真正的危险不是"用了 token ratio"本身，而是 $r_tA$ **直接**进梯度、只有一道 hard clip 兜底，异常 ratio 产生很不稳定的贡献且在边界处突变。SAPO 的有效权重 $w(r_t)r_tA$ 会在 $r_t$ 异常时自动 $\to0$，既保留 token 级自适应，又压掉极端 token。
+
+**89.** SAPO 说自己有 sequence coherence，是因为它算了 sequence ratio 吗？
+
+> **答：** **不是，它没有显式算。** 论文证的是统计性质：policy update 较小、同一 sequence 内 token log-ratio 方差不太大时，平均 gate $\frac1T\sum_tw(r_t)$ 可近似成 $\log s_i$ 的平滑函数 $\operatorname{sech}^2(\frac\tau2\log s_i)$。**形式上 token-level，统计行为上有 sequence coherence**，而且是有条件的近似。
+
+**90.** ⭐ 为什么 $\tau_{neg}>\tau_{pos}$？
+
+> **答：** $\tau$ 越大 gate 越窄，负 advantage 被更快 downweight。原因在 softmax 的归一化约束 $\sum_v\pi(v)=1$：把一个 bad token 压下去，这些概率质量**必须分摊给整个巨大词表的其他 token**，等于间接推高大量无关 token 的 logits，在几十万词表 + MoE 下非常 noisy。正 advantage 只是"把这个 token 提上去"，方向集中得多。
+
+## K. Kimi K2.5 / K3（[11](11-kimi-k25-k3.md)）
+
+**91.** ⭐ Kimi 为什么去掉 GRPO 的 std normalization？
+
+> **答：** $\sigma_r$ 会**改变不同 prompt 的相对训练权重**。0/1 reward 下一组 $[1,1,1,0]$ 不除 std 时 $A$ 天然在 $[-1,1]$ 附近；除以 $\sigma_r$ 后不同 pass rate 的题被重新缩放，**$\sigma_r\to0$ 时（几乎全对/全错）再小的差异都会被放大**。去掉后由 reward gap 本身决定梯度强弱。代价：混训不同 reward scale 的任务时需要 reward 设计可控。
+
+**92.** ⭐ token-level loss 改了什么？副作用是什么？
+
+> **答：** $\frac1G\sum_i\frac1{|y_i|}\sum_t\to\frac1N\sum_{i,t}$（$N=$ batch 总生成 token 数），**每个 token 等权**。
+> 动机：GRPO 里 $|y|=100000$ 的 trajectory 每 token 只有 $\frac1{100000}$ 权重，比 $|y|=100$ 稀释 1000 倍，agent 场景很不自然。
+> 副作用：**长 response 总权重更大**（1000 token 约是 100 token 的 10 倍），产生长度偏置，所以必须配合 budget control。
+
+**93.** ⭐⭐ Kimi 的 token mask 和 PPO 的 clip 本质区别是什么？
+
+> **答：** PPO 的 clip **和 advantage 符号绑定**（$A>0$ 防 $\rho\gg1$、$A<0$ 防 $\rho\ll1$），问的是"**这个方向还能不能继续更新**"。
+> Kimi 的 mask **与 advantage 正负无关**：$m_t=\mathbf 1[\alpha\le\rho_t\le\beta]$，超界就把该 token 的 PG 置零，问的是"**这条数据还可不可信**"。$\rho_t=20$ 这种 stale token 的 IS 方差极大，宁可丢掉。
+
+**94.** 为什么把 reference KL 换成 $(\log\rho)^2$？两者约束谁和谁？
+
+> **答：** reference KL 约束 $\pi_\theta\leftrightarrow\pi_{ref}$（冻结 SFT 模型），解决"别忘掉原始能力"；$(\log\rho)^2$ 约束 $\pi_\theta\leftrightarrow\pi_{old}$（产生这批 trajectory 的行为策略），解决 **off-policy stability**。partial rollout 下后者才是真问题。
+> 它在 log-prob space 对称（$\rho=e^{\pm2}$ 都罚 4），梯度 $2\tau\log\rho_t$，离得越远拉得越狠。
+
+**95.** 既然有 mask，为什么还要 $(\log\rho)^2$？
+
+> **答：** 作用区域不同，一软一硬。$\rho\approx1$ → 正常 PG + 极小正则；$\rho$ 开始偏离 → 正则越来越强（**软约束**）；$\rho$ 偏离得非常离谱 → PG 直接 mask（**硬保险**）。
+
+**96.** ⭐⭐ partial rollout 是什么？为什么它是前面那些 off-policy 技术的根源？
+
+> **答：** 完成 $\lambda N_pK$ 条 rollout 就开始训练，剩下的暂停、下一 iteration resume，避免所有 GPU 等 long-tail straggler（agent trajectory 从 2 min 到 50 min）。
+> 代价：一条 trajectory 前半段由 $\pi_0$ 生成、后半段可能已是 $\pi_2$，$\pi_{behavior}\ne\pi_{current}$ 且差很远。
+> 因果链：$\text{partial rollout}\to\text{stale data}\to\text{ratio mask}+(\log\rho)^2$。**三件事必须一起理解。**
+
+**97.** reasoning budget 怎么做？为什么不是统一一个 max\_tokens？agent 场景怎么防绕过？
+
+> **答：** 估 baseline budget $b_0(x)$，乘 effort multiplier 得 $B(x)=\gamma b_0(x)$，$T(y)>B(x)$ 时直接 $r(y)=-1$。
+> 不用固定值是因为难度不同（简单题 500、难题 10000），要 **problem-dependent**。
+> agent 场景把 **model-generated tool arguments 也计入 $T(y)$**，否则模型可以"thinking 很短但疯狂调工具"绕过预算。
+> 用 $\gamma_{low}<\gamma_{high}<\gamma_{max}$ 训三个 effort expert —— 是 **policy 学会在不同预算下推理**，不是 inference 时截断。
+
+**98.** 为什么要 9 个 expert？
+
+> **答：** 3 domain（General / General Agent / Coding Agent）× 3 effort（low/high/max）。因为不同 RL objective 有**梯度冲突**：coding 倾向长工具交互和验证，general chat 倾向简洁少工具；low effort 要少算，max effort 要不惜代价做对。混训 reward 信号互相拉扯。做法：先分别训出能力峰值，再用 MOPD 合并。
+
+**99.** ⭐⭐ K3 里有几个 clip？分别 clip 什么？
+
+> **答：** **三层，目的完全不同**：① **MOPD reward clip** $\mathrm{clip}(\mathrm{sg}[\log\pi_T-\log\pi_S],-R_{\max},R_{\max})$ —— teacher 给的监督信号不能太离谱；② **off-policy mask** $\mathrm{mask}(\pi_\theta/\pi_{old})$ —— 当前 policy 和 rollout policy 不能差太远；③ $-\tau(\log\pi_\theta/\pi_{old})^2$ —— policy drift 软约束。
+> ① 管 teacher 和 student 的差，②③ 管 $\theta$ 和 $old$ 的差。
+
+**100.** ⭐ 写出 K2.5/K3 的 RL objective。
+
+> **答：** $J_{Kimi}=\frac1N\sum_{i,t}\big[M(\rho_{i,t})\,\rho_{i,t}\,(r_i-\bar r)-\tau(\log\rho_{i,t})^2\big]$，$N=\sum_i|y_i|$，$M(\rho)$ 在 ratio 合理时为 1、太 off-policy 时为 0。
+> 三个部件：group-relative advantage（不除 std）+ ratio mask + squared log-ratio 正则。
+
+**101.** 一句话说清 K3 的血统。
+
+> **答：** **GRPO 骨架**（group sampling + group baseline + critic-free PG）+ **DAPO-like 改造**（no std norm + token-level aggregation）+ **Kimi 核心改造**（off-policy token mask + $(\log\rho)^2$ + partial rollout）+ **K3 能力扩展**（budget RL + 9 experts + MOPD）。不是"GRPO 加一堆 trick"。
+
+## L. 各家 recipe 横向（[12](12-recipes-landscape.md)）
+
+**102.** ⭐ Qwen3 首发版用的是 GRPO 还是 GSPO？
+
+> **答：** **GRPO**。Qwen3 Technical Report（2025-05）的 Reasoning RL 明确写 GRPO。GSPO 是 2025-07-27 才发布、应用于**当时最新的** Qwen3 models（Instruct/Coder/Thinking）。**不要把 Qwen3 全部记成 GSPO。**
+
+**103.** 写出 Qwen 的 RL 算法演进线。
+
+> **答：** Qwen2.5（SFT+DPO+GRPO）→ Qwen3 首发（GRPO）→ 2025.7 GSPO（Qwen3 后期版本）→ 2025.12 SAPO → 2026 起转向大规模异步 agent RL，且 **production objective 不再公开**。
+
+**104.** ⭐ 为什么不能说"Qwen3.5 = SAPO"？给一个反证。
+
+> **答：** 官方 Qwen3.5 release **没点名 objective**，只说了 RL task/environment scaling 和异步 rollout-training 解耦。
+> 反证：Qwen 2026-06 发布 Qwen-AgentWorld 时仍明确写 **RL uses GSPO**；Qwen-VLA 还在用 PPO。**同一家不同任务用不同 optimizer** 才是更合理的判断。
+
+**105.** ⭐ 看到 Qwen3.8-Flash 报告里的 Muon，能答"RL 算法是 Muon"吗？
+
+> **答：** **不能。** Muon 是 **parameter optimizer**（$\theta\leftarrow\theta-\eta\,\text{Muon}(\nabla L)$，pretraining 用），GSPO/SAPO 是 **policy optimization objective**（$L_{RL}(\theta)$），完全不同层面。那份报告讲 architecture + pretraining + optimizer，**没披露 post-training RL objective**。
+
+**106.** 有资料说"Qwen3.8 用 GRPO"，怎么判断？
+
+> **答：** 大概率因为 NeMo-RL / ms-swift 这类框架**支持拿 Qwen3.8 做 GRPO 后训练** —— 那是**第三方开源 recipe**，不是 Qwen 官方训练时用了 GRPO 的证据。
+
+**107.** ⭐ GLM-5.x 的 RL 是什么？IcePop 解决什么？
+
+> **答：** $\text{GRPO}+\text{IcePop}+\text{Async Agent RL}$（靠 slime 做 rollout/training worker 异步）。
+> IcePop 解决 $\pi_{train}\ne\pi_{infer}$ 的 **training-inference mismatch**：除了 $\pi_\theta/\pi_{old}$，还盯 **rollout inference engine 和 training engine 之间的概率差异**，抑制偏差异常大的 token/sample。GLM-5 去掉了原 IcePop 的 KL 正则以加快 RL improvement。
+
+**108.** ⭐⭐ 训推不一致，GSPO / IcePop / Kimi 三家分别怎么解？
+
+> **答：** **GSPO**：把 token ratio 平均成 sequence ratio，让抖动互相抵消，不再需要 Routing Replay；**IcePop**：直接盯 train/infer engine 的概率差，抑制异常 token/sample；**Kimi**：盯 $\pi_\theta/\pi_{old}$ 的偏离，超界就 mask，另加 $(\log\rho)^2$ 软约束。
+
+**109.** 被问"XX 最新模型用什么 RL"，怎么答不翻车？
+
+> **答：** ① 把**官方明确披露**和**自己的推测**分开说，推测要给依据（发布时间、算法演进、是不是大 MoE）；② 不要把一家公司说成只有一个算法；③ 区分 **parameter optimizer**（Muon/AdamW）和 **policy objective**（GRPO/GSPO/SAPO），也区分**官方 recipe 和第三方框架 recipe**。
+
+## M. 整体串讲（压轴）
+
+
+
+**110.** ⭐⭐ **把 PPO → GRPO → DAPO → GSPO 的演化线讲一遍**，说明每一步改的是什么。
 
 > **答：** 四者只改三样东西：**A 怎么来、ratio 怎么算、loss 怎么聚合**。
 > Policy Gradient → **PPO**（引入 ratio + clip，让旧数据可重用且更新不过猛）→ 但 critic 很贵、而 LLM 可以同 prompt 多采样 → **GRPO**（去掉 critic 和 GAE，用组内相对 reward 当 advantage）→ 真跑大后暴露 clip 太保守、无效 prompt 浪费、长度偏置、超长截断 → **DAPO**（Clip-Higher、Dynamic Sampling、token-level loss、overlong shaping）→ 再质疑 token-level ratio 本身是否合理 → **GSPO**（改成 sequence-level ratio 和 clip）。
 > 即：PPO→GRPO 改的是 **advantage 怎么估**；GRPO→DAPO 改的是 **怎么稳定高效地 scale**；GRPO/DAPO→GSPO 改的是 **ratio 的粒度（token 还是 sequence 当 action）**。
+> 再往后：GSPO 的代价是一条 sequence 越界就整条没梯度 → **SAPO** 回到 token ratio 但把 hard clip 换成平滑衰减的 soft gate $w(r)=4p(1-p)$；而真实 production recipe（**Kimi K2.5/K3**）又在此之外加了与 advantage 符号无关的 off-policy mask、$(\log\rho)^2$ 软约束和 partial rollout。
 
-**80.** ⭐ 默写五个必背公式。
+**111.** ⭐ 默写五个必背公式。
 
 > **答：** ① $A=Q-V$；② $\delta_t=r_t+\gamma V(s_{t+1})-V(s_t)$；③ $\hat A_t^{GAE}=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+l}$；④ $r_t(\theta)=\frac{\pi_\theta(a_t|s_t)}{\pi_{old}(a_t|s_t)}$；⑤ $L^{PPO}=\mathbb E[\min(r_tA_t,\mathrm{clip}(r_t,1-\epsilon,1+\epsilon)A_t)]$。
 
-**81.** ⭐ 从 $J(\theta)$ 一路推到 $L^{CLIP}$，中间不跳步。
+**112.** ⭐ 从 $J(\theta)$ 一路推到 $L^{CLIP}$，中间不跳步。
 
 > **答：** ① $J(\theta)=\mathbb E_{\tau\sim\pi_\theta}[G]$ 是真正目标。② policy gradient 定理：$\nabla J=\mathbb E_{\pi_\theta}[A\nabla\log\pi_\theta]$。③ 为让 autograd 产生这个梯度，构造 on-policy surrogate $L=\mathbb E[A\log\pi]$（因 $\nabla L=A\nabla\log\pi$，注意 $J\ne L$）。④ 想重用 $\pi_{old}$ 的 rollout，但采样分布错位。⑤ importance sampling 作用在梯度期望上：$\nabla J=\mathbb E_{\pi_{old}}[rA\nabla\log\pi]$。⑥ 再找新 surrogate，利用 $\nabla r=r\nabla\log\pi$ 得 $\nabla(rA)=rA\nabla\log\pi$，所以 $L=\mathbb E_{old}[rA]$。⑦ 但 $rA$ 会把概率无限推远，加 clip 让超出区间的 loss 变平、梯度为 0。⑧ 只想截断"正确方向走太远"、不想妨碍纠错，所以取更保守的分支：$L^{CLIP}=\mathbb E[\min(rA,\mathrm{clip}(r,1-\epsilon,1+\epsilon)A)]$。
 
-**82.** 画出经典 RLHF PPO 的架构图（actor / critic / reward / reference 四个模型的关系）。
+**113.** 画出经典 RLHF PPO 的架构图（actor / critic / reward / reference 四个模型的关系）。
 
 > **答：**
 >

@@ -112,6 +112,9 @@
          "notes/06-post-training/rl/07-kl.md",
          "notes/06-post-training/rl/08-dapo.md",
          "notes/06-post-training/rl/09-gspo.md",
+         "notes/06-post-training/rl/10-sapo.md",
+         "notes/06-post-training/rl/11-kimi-k25-k3.md",
+         "notes/06-post-training/rl/12-recipes-landscape.md",
          "notes/06-post-training/rl/self-test.md"
         ],
         "dirs": []
