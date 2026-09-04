@@ -19,9 +19,11 @@
        "notes/01-llm-arch/00-map.md",
        "notes/01-llm-arch/01-tokenizer.md",
        "notes/01-llm-arch/02-position-encoding.md",
+       "notes/01-llm-arch/02b-rope-from-zero.md",
        "notes/01-llm-arch/03-normalization.md",
        "notes/01-llm-arch/04-attention.md",
        "notes/01-llm-arch/05-ffn-moe.md",
+       "notes/01-llm-arch/05b-activations.md",
        "notes/01-llm-arch/06-lm-head-and-mtp.md",
        "notes/01-llm-arch/self-test.md"
       ],

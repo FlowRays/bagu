@@ -1,6 +1,7 @@
 # 位置编码：从绝对位置到 RoPE 与外推
 
 > 高频考点：RoPE 怎么让 attention 依赖相对位置，NTK 和 YaRN 各改了什么。
+> 看不懂"旋转"和 $R_m^\top R_n=R_{n-m}$ 就先看 [02b RoPE 从零](02b-rope-from-zero.md)（两个 token 手算一遍）。
 
 ## 1. 为什么需要位置编码
 
@@ -101,11 +102,13 @@ $$\boxed{\text{PI：一刀切拉伸}\ \to\ \text{NTK：调 base，按频率自�
 
 VLM 里图像是二维的，一维位置编码不够用。**M-RoPE / 2D RoPE** 把 RoPE 的维度分成几组，分别编码 $(t, h, w)$：
 
-- 文本 token：三个分量取同一个值，退化成 1D RoPE
+- 文本 token：三个分量取同一个值（`token1→(1,1,1)`），退化成 1D RoPE
 - 图像 token：按它在图里的行列填 $h,w$
 - 视频：再加上帧号 $t$
 
 DeepSeek-V4-Flash-Vision 的 ViT 内部用的就是 2D RoPE（见 [visual token 压缩](../07-vlm/03-visual-token-compression.md#6-案例deepseek-v4-flash-vision-exp)）。
+
+⚠️ 别混层级：**Qwen2.5-VL 的 ViT 内部是 2D RoPE，LLM 内部才是 MRoPE**，两个不同模块（见 [05 Qwen2.5-VL](../07-vlm/05-qwen25-vl.md#4-vit-内部是-2d-rope不是-mrope)）。逐维推导和"为什么 flatten 不行"见 [02b](02b-rope-from-zero.md#8-图片为什么不能直接用-1d-rope)。
 
 ## 自测（口述版）
 

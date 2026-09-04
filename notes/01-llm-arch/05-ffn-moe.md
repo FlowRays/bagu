@@ -19,7 +19,9 @@ $$\boxed{\text{Attention：从别的 token 拿信息}\qquad\text{FFN：把拿到
 
 ## 2. 激活函数：GELU → SwiGLU
 
-**GELU**：$x\cdot\Phi(x)$，比 ReLU 平滑，早期 Transformer 常用。
+> $\Phi$ 是什么、GLU 家族、为什么要两条 projection，见 [05b 激活函数](05b-activations.md)。
+
+**GELU**：$x\cdot\Phi(x)$（$\Phi$ 是标准正态 CDF），比 ReLU 平滑，早期 Transformer 常用。
 
 **SwiGLU**（LLaMA 系）引入门控，把一层拆成三个矩阵：
 
@@ -29,7 +31,9 @@ $$\text{SwiGLU}(x)=\big(\text{SiLU}(xW_{\text{gate}})\odot(xW_{\text{up}})\big)W
 
 **注意只有 gate 分支过 SiLU，up 分支不过。**
 
-### 为什么 $d_{ff}$ 变成 $\frac83 d$
+它属于 GLU 家族 —— 把门函数换掉就是别的成员：GLU 用 $\sigma$、ReGLU 用 ReLU、GEGLU 用 GELU。统一形式是 $\boxed{\text{content}\odot\text{gate}}$。
+
+### 为什么 d_ff 变成 8/3 d
 
 普通 FFN 两个矩阵：$2\cdot d\cdot d_{ff}=8d^2$（$d_{ff}=4d$）。
 SwiGLU 三个矩阵：$3\cdot d\cdot d_{ff}$。

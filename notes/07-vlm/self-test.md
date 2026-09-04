@@ -45,6 +45,18 @@
 > **答：** CLIP 是 batch 内 softmax contrastive：$L_i=-\log\frac{\exp(s(I_i,T_i)/\tau)}{\sum_j\exp(s(I_i,T_j)/\tau)}$，正确 caption 要和整个 batch 竞争，因此依赖大 batch、batch 内 negative、多卡 all-gather，batch size 直接影响 loss 行为。
 > SigLIP 改成 sigmoid pairwise 二分类：$L=-\sum_{ij}\log\sigma(y_{ij}(s_{ij}+b))$，$y_{ij}=+1$ 若 $i=j$ 否则 $-1$。不再需要 softmax over whole batch → **扩展性和 batch size 灵活性更好**。
 
+**9b.** ⭐⭐ image-text pair 怎么构造的？负样本从哪来？会不会有假负样本？
+
+> **答：** **不是人工挑负样本。** 数据本身是配对的 $(I_i,T_i)$，一个 batch 内把所有 image 和 text 两两组合成 $N\times N$，$i=j$ 是 positive、$i\ne j$ 是 negative —— 这叫 **in-batch negatives**。
+> **正负极不平衡**：$N=1024$ 时正样本 1024、负样本约 $10^6$，所以 SigLIP 实际 loss 里有可学习的 scale / bias。
+> **false negative 确实存在**：$I_1$ 是金毛配 "a golden retriever"，batch 里刚好还有 "a dog playing outside"，后者被当 negative 但其实描述得对。靠数据规模大 + 随机采样在统计上摊平。
+
+**9c.** ⭐ 一句话说清 CLIP 和 SigLIP 的区别，并说明 softmax 带来什么副作用。
+
+> **答：** CLIP 是"**这些句子里哪一句最匹配这张图**"（softmax 单选题），SigLIP 是"**这张图和这句话匹不匹配**"（sigmoid 判断题）。
+> softmax 强制 $\sum_j p(T_j|I_i)=1$，候选文本**天生互相竞争**：一张橘猫图配 "a cat" 和 "an orange cat on a sofa" 两个都对，却必须抢概率。sigmoid 各判各的，0.95 和 0.98 同时成立没问题。
+> 工程上更关键的是 SigLIP **没有必须跨全 batch 归一化的 softmax 分母**，每个 pair 能独立算，多卡大规模训练不必 all-gather embedding。
+
 **10.** SigLIP2 相比 SigLIP 还加了什么？
 
 > **答：** captioning-based pretraining、self-distillation、masked prediction、online data curation、localization / dense prediction 优化、native aspect ratio / 多分辨率、multilingual。所以 **CLIP 强在 global semantic alignment，SigLIP2 还更重视 dense / localization / multilingual / variable-resolution**。

@@ -207,3 +207,59 @@
 **44.** ⭐ 面试一分钟讲清 attention 家族的演进。
 
 > **答：** MHA 是基准，但 KV cache 正比于头数，32K 上下文就要十几 GB。MQA 把 KV 砍到一个头，cache 省 $h$ 倍但质量明显下降。GQA 折中，KV 分成 $h_{kv}$ 组由多个 query head 共享，省 $g$ 倍而质量几乎不掉，是现在的默认。MLA 换了个方向，把 KV 压成低维 latent 只缓存 latent，压缩比更高、质量不降反升，代价是要为 RoPE 单独拆一个分支。再往前是线性和稀疏注意力，目标是打破 $O(L^2)$，通常和 full attention 混合使用。
+
+## H. RoPE 从零（[02b](02b-rope-from-zero.md)）
+
+**45.** ⭐⭐ 手算：$q=k=[1,0]^\top$，每前进一个位置转 $30^\circ$，A 在位置 1、B 在位置 3，$q'^\top k'$ 等于多少？没有 RoPE 时呢？
+
+> **答：** $q'=[\cos30^\circ,\sin30^\circ]^\top\approx[0.866,0.5]^\top$，$k'=[\cos90^\circ,\sin90^\circ]^\top=[0,1]^\top$，所以 $q'^\top k'=0.5$。
+> 因为夹角 $90^\circ-30^\circ=60^\circ$，$\cos60^\circ=0.5$，即 $\cos((j-i)\omega)$，$j-i=2$。
+> 没有 RoPE 时 $q^\top k=1$，**里面完全不含位置信息**，看不出两个 token 相距 2。
+
+**46.** ⭐ 为什么 $(i,j)=(1,3)$ 和 $(5,7)$ 的 attention 行为类似？
+
+> **答：** $\theta$ 分别是 $30^\circ/90^\circ$ 和 $150^\circ/210^\circ$，**角度差都是 $60^\circ$**。绝对位置不同但 $3-1=7-5=2$，点积只依赖差值。符合语言的需求 —— 关心"在我前面几格"，不关心"是第 382 个 token"。
+
+**47.** ⭐ RoPE 怎么处理 128 维？为什么每组频率不同？
+
+> **答：** 维度**两两配对**成 64 个二维平面各自旋转，$\theta_{p,m}=p\,\omega_m$，$\omega_m=\theta^{-2m/d}$（$\theta=10000$）。
+> 不同频率用**钟表**记：只有秒针的话转一圈就重复，分不清 1 分钟和 2 分钟；秒针+分针+时针才能覆盖大范围。**高频维度管短距离，低频维度管长距离。**
+
+**48.** ⭐⭐ 图片为什么不能 flatten 后直接用 1D RoPE？
+
+> **答：** $2\times3$ 的图 flatten 成 `A B C D E F`，$C\to D$ 序列距离是 1、**看着像邻居**，但 C 在右上、D 在左下，空间上根本不相邻。1D 只有一个 $\Delta p$，表达不了。所以要给 patch 二维坐标 $(h,w)$，把 channel 分两段分别按 $h$、$w$ 旋转。
+
+**49.** ⭐⭐ MRoPE 是什么？文本 token 的 position id 怎么填？
+
+> **答：** 位置从 $p$ 扩展成 $(t,h,w)$，head_dim 分三段分别按 temporal/height/width 旋转，于是点积里同时含 $\Delta t,\Delta h,\Delta w$。
+> **文本 token 令 $t=h=w=p$**（`token1→(1,1,1)`），退化成 1D RoPE，所以文本/图片/视频能共用同一个 Transformer。
+> $\boxed{\text{MRoPE 不是新的位置编码，就是把一个旋钮变成三个旋钮}}$。⚠️ ViT 内部的 2D RoPE 和 LLM 内部的 MRoPE 是两个不同模块。
+
+## I. 激活函数（[05b](05b-activations.md)）
+
+**50.** 标准正态分布和 $\Phi(x)$ 分别是什么？图像什么样？
+
+> **答：** $\mathcal N(0,1)$ 是均值 0、方差 1 的**钟形曲线**，0 附近概率最大、左右对称。$\Phi(x)=P(X\le x)$ 是它的 **CDF**，图像是 **S 形**：$\Phi(-\infty)=0$、$\Phi(0)=0.5$、$\Phi(+\infty)=1$。密度公式不用背。
+
+**51.** ⭐ GELU 和 SiLU 的关系？
+
+> **答：** 结构**完全一样**：$\text{GELU}=x\Phi(x)$、$\text{SiLU}=x\sigma(x)$，都是 $\boxed{\text{输入}\times\text{一个 0 到 1 的平滑门}}$，只是门函数一个用正态 CDF、一个用 sigmoid，而且 $\Phi(x)\approx\sigma(x)$。GELU 看着难记只是因为 $\Phi$ 陌生。
+
+**52.** ⭐ ReLU / GELU / SiLU 的图像趋势？ReLU 的问题是什么？
+
+> **答：** ReLU 左边**严格 0**、右边直线；GELU/SiLU 左边接近 0 但**不突然切断**（稍微往下鼓）、0 附近平滑过渡、右边接近 $y=x$。
+> ReLU 的问题：负半轴梯度为 0，可能出现 dead neuron。所以 GELU/SiLU 是"更顺滑的 ReLU"。
+
+**53.** ⭐⭐ GLU 的核心思想？写出公式。它比普通 FFN 多了什么？
+
+> **答：** 同时算两条分支，**一条提供内容，一条控制门开多大**：$\text{GLU}(x)=(W_1x)\odot\sigma(W_2x)$，即 $\boxed{\text{output}=\text{content}\times\text{gate}}$。
+> 普通 FFN 只做 feature extraction，GLU 多了 **feature selection**。
+
+**54.** GLU 家族成员之间差在哪？
+
+> **答：** 只差**门函数**：GLU 用 $\sigma$、ReGLU 用 ReLU、GEGLU 用 GELU、**SwiGLU 用 SiLU**。
+
+**55.** ⭐⭐ SwiGLU 为什么要两条独立 projection？只用一个 $W$ 行不行？
+
+> **答：** $\text{SiLU}(a)\odot a$ 理论上能算，但**表达能力弱**。独立的 $W_{gate}$ 和 $W_{up}$ 意味着"**一组特征产生内容，另一组完全独立的特征决定门控**" —— 比如 gate 分支检测到"代码语境"，去打开 up 分支里的 coding feature。这种乘性交互本身增加表达能力。
+> 面试三条：① 平滑非线性、负半轴保留信息；② 动态 gating；③ 两个独立 projection + multiplicative interaction。

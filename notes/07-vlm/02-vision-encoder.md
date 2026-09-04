@@ -20,6 +20,31 @@ $$L=-\sum_{ij}\log\sigma\big(y_{ij}(s_{ij}+b)\big)$$
 
 不再需要 softmax over whole batch → 扩展性和 batch size 灵活性更好。
 
+### ⭐ image-text pair 是怎么来的：in-batch negatives
+
+**不是人工给每张图挑负样本。** 训练数据本身就是配对的 $(I_1,T_1),\dots,(I_N,T_N)$，一个 batch 内把所有 image 和所有 text 两两组合成 $N\times N$：
+
+| | $T_1$ 猫 | $T_2$ 汽车 | $T_3$ 苹果 |
+|---|---|---|---|
+| $I_1$ 猫 | ✅ | ❌ | ❌ |
+| $I_2$ 汽车 | ❌ | ✅ | ❌ |
+| $I_3$ 苹果 | ❌ | ❌ | ✅ |
+
+$$\boxed{i=j\Rightarrow\text{positive}},\qquad\boxed{i\ne j\Rightarrow\text{negative}}$$
+
+这就叫 **in-batch negatives** —— 一个 batch 里其他图片对应的文本自动成为当前图片的负样本。
+
+⚠️ **正负极度不平衡**：$N=1024$ 时正样本 1024 个，负样本约 $1024^2-1024\approx10^6$ 个。所以 SigLIP 实际 loss 里有可学习的 scale / bias 来处理这个，不是简单把百万个 pair 当等价的二分类。
+
+⚠️ **false negative 是真实存在的**：$I_1$ 是金毛、$T_1=$"a golden retriever"，batch 里刚好还有 $T_2=$"a dog playing outside" —— 按 pairing 规则 $(I_1,T_2)$ 被当成 negative，但它其实描述得挺对。CLIP/SigLIP 这类大规模图文对比学习都有这个问题，只是数据规模大、batch 随机采样，统计上仍能学出好的 representation。
+
+### 一句话记住两者的区别
+
+$$\text{CLIP}:\ \text{这些句子里，哪一句最匹配这张图？（softmax 单选题）}$$
+$$\text{SigLIP}:\ \text{这张图和这句话匹不匹配？（sigmoid 判断题）}$$
+
+softmax 强制 $\sum_j p(T_j|I_i)=1$，所以候选文本**天生互相竞争** —— 一张橘猫图配 "a cat" 和 "an orange cat on a sofa"，两个其实都对，但 softmax 下它们必须抢概率。sigmoid 各判各的，$P=0.95$ 和 $P=0.98$ 同时成立完全没问题。
+
 ### SigLIP2 加了什么
 
 captioning-based pretraining、self-distillation、masked prediction、online data curation、localization/dense prediction 优化、native aspect ratio / 多分辨率、multilingual。

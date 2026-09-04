@@ -16,9 +16,11 @@
 |---|---|---|
 | [01 Tokenizer 与词表](01-tokenizer.md) | BPE / BBPE / WordPiece / Unigram、encode 优先级、chat template、词表大小影响 | 中 |
 | [02 位置编码](02-position-encoding.md) | 绝对 PE、ALiBi、**RoPE**、partial RoPE、NTK / YaRN 外推、M-RoPE | **高** |
+| [02b RoPE 从零](02b-rope-from-zero.md) | **数学前置**：旋转矩阵、两 token 手算、多频率的钟表类比、2D RoPE、MRoPE | — |
 | [03 Normalization](03-normalization.md) | LayerNorm / RMSNorm / BatchNorm、**pre vs post norm**、residual stream、QK-norm | **高** |
 | [04 Attention 家族](04-attention.md) | MHA / MQA / **GQA** / **MLA**、KV cache 账、attention sink、FlashAttention、线性与稀疏注意力 | **最高** |
 | [05 FFN 与 MoE](05-ffn-moe.md) | SwiGLU 与 $\frac83d$、router / top-k、shared expert、**负载均衡**、EP | **高** |
+| [05b 激活函数](05b-activations.md) | **数学前置**：正态分布 / CDF / sigmoid 的图像、"输入×门"模板、GLU 家族 | — |
 | [06 LM head 与 MTP](06-lm-head-and-mtp.md) | weight tying、logits 显存、MTP 的双重作用 | 中 |
 | [自测题](self-test.md) | 44 题带答案 | — |
 
