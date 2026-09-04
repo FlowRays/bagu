@@ -40,6 +40,39 @@ $$\boxed{VE+Projector+LLM\ \text{全部 train}}$$
 
 S1/S2/S3 不是换了 loss，主要是**改 data mixture + context length**。
 
+**S0 为什么要先固定两端、只训桥？** 因为一开始 merger 是随机的：
+
+```text
+ViT：我说中文        Merger：乱翻        LLM：只懂英文
+```
+
+如果一上来全参数解冻，两个**已经很好的 pretrained representation**（SigLIP2 和 Qwen3）都可能为了迁就一个很烂的中间接口而乱跑。所以先
+
+$$\boxed{\text{固定两端，只训练桥}}$$
+
+把 vision feature space 大致映到 LLM embedding space，这就是 modality alignment。Qwen3-VL 的 3 个 DeepStack merger 也在这一阶段一起被 CE 训练 —— 它们同样只影响 $p(y_t)$，**不需要各自的 loss**。
+
+### Qwen2.5-VL 的三个阶段
+
+| Stage | 数据量 | Context | 更新 |
+|---|---:|---:|---|
+| Visual PT | 1.5T | 8K | **只 ViT**（LLM frozen） |
+| Multimodal PT | 2.0T | 8K | ALL（官方明确 all parameters unfrozen） |
+| Long-context PT | 0.6T | 32K | ALL |
+
+合计 4.1T。⚠️ Stage 1 的 **projector 训不训，报告没写**，别自己补全 —— 详见 [05](05-qwen25-vl.md#stage-1-的-projector-到底训不训报告没说)。
+
+### ⭐ 混纯文本数据时，ViT 拿不到梯度
+
+多模态 PT 从来不是 100% VL 数据，一定混大量 **text-only**，否则 LLM 会出现 language capability degradation（Qwen3-VL 技术报告明确说明这是为了维持语言能力）。
+
+而纯文本 sample 的前向是 `text → LLM → CE`，**根本不经过 ViT**：
+
+$$\text{text-only batch}:\quad\boxed{\nabla_{\theta_V}L=0}\qquad\text{只有 LLM 收到梯度}$$
+$$\text{VL batch}:\quad ViT+Merger+LLM\ \text{都有梯度}$$
+
+所以"ViT 是 trainable 的"和"ViT 每个 step 都在更新"是两回事。这个细节面试很值得说。
+
 ### Kimi K3 更激进
 
 连 Stage −1 都不要，MoonViT from scratch，从训练一开始就 $VE+\text{projector}+LLM$ 一起在统一的 $L_{\text{NTP}}$ 下更新，官方称为 **native multimodal training**。

@@ -172,3 +172,134 @@
 
 > **答：** VLM 的 ViT、projector 和 LLM 并不需要分别定义三个 loss。普通 multimodal SFT 就是 assistant token 上的 autoregressive cross-entropy；只训 LLM 时梯度只更新 LLM，同时训 projector 时 language loss 会通过 LLM 反传到 projector，ViT 也解冻时同一个 language loss 继续反传到 ViT，实现 end-to-end visual-language adaptation。
 > RL 同理，GRPO/PPO 的 policy loss 定义在输出 token 的 log probability 上，vision encoder 解冻时 policy gradient 同样能传回 ViT；但实践中 RL 更倾向冻结 vision encoder，因为 reward noisy、credit assignment 间接，直接更新 ViT 容易造成视觉 representation drift。
+
+## E. Patch Embedding（[01b](01b-patch-embedding.md)）
+
+**37.** ⭐⭐ 为什么 `Conv2d(3, d, kernel=P, stride=P)` 等价于 ViT 的 patch embedding？说准确一点。
+
+> **答：** stride 等于 kernel 时**窗口不重叠**，每个输出位置正好对应一个独立 patch，于是每个 patch 都在做同一个 $y_i=Wx_i+b$，$W\in\mathbb R^{d_{out}\times CK_HK_W}$。
+> ⚠️ 不是"因为 stride=kernel 卷积才线性" —— 卷积对每个局部窗口一直都是线性的。stride=kernel 带来的是**不重叠**。$K=14,S=7$ 也是 extract patch + Linear，只是 patch 会重叠。
+
+**38.** ⭐ `Conv2d(3, 1280, kernel_size=14, stride=14)` 有几个 kernel、每个多少参数、等价于什么？
+
+> **答：** 1280 个 kernel，每个 $3\times14\times14=588$ 个参数，合起来 $W\in\mathbb R^{1280\times588}$，等价于 $\text{Linear}(588,1280)$ 作用在每个不重叠的 $14\times14$ RGB patch 上。
+
+**39.** ⭐ `out_channels=1280` 时，每个 channel 内部维度是多少？
+
+> **答：** 对**一个 patch 位置**，每个 channel 只有 **1 个标量**，1280 个合起来才是这个 patch 的 1280 维 token（$[3,2,14,14]\to[1280,1,1,1]$）。
+> 对整段视频 $[3,8,448,448]\to[1280,4,32,32]$，此时第 $c$ 个 channel 是一张 $4\times32\times32$ 的时空 feature map。两个视角等价：$[1280,4,32,32]\leftrightarrow[4096,1280]$。
+
+**40.** Qwen2.5-VL 为什么用 Conv3D？图片没有时间维怎么办？
+
+> **答：** 为了**图片和视频共用一套 patch embedding**。kernel $(2,14,14)$ 表示一个 tubelet = 连续 2 帧里的 $14\times14$ 区域。图片由 processor 把最后一帧重复补足 $T=2$（概念上 $I\to[I,I]$），不需要两套代码。
+
+**41.** ⭐⭐ $448\times448$ 的图进 Qwen2.5-VL，到 ViT 第一层之前 shape 怎么变？
+
+> **答：** $[3,448,448]$ →（resize/normalize，边长要能被 $14\times2=28$ 整除）→ 复制一帧 $[3,2,448,448]$ → kernel=stride=$(2,14,14)$ 不重叠切块，grid $1\times32\times32$ = **1024 个 patch** → 每 patch $1176$ 个数即 $[1024,1176]$ → 共享 $\text{Linear}(1176,1280)$ → $[1024,1280]$。
+> 1024 是 **ViT 内部** token 数，不是给 LLM 的（后面 $2\times2$ merge 压到 256）。
+
+**42.** 为什么 preprocessing 要求边长能被 28 整除？
+
+> **答：** $28=14\times2$：14 是 **patch size**，2 是 **spatial merge size**。两级都要整除，patch grid 才能正好按 $2\times2$ 分组。
+
+## F. Qwen2.5-VL 走查（[05](05-qwen25-vl.md)）
+
+**43.** ⭐ 背出 Qwen2.5-VL ViT 的关键配置。
+
+> **答：** patch $14\times14$、temporal patch 2、hidden 1280、32 层、16 heads（$d_h=80$）、MLP 3420、window $112\times112$、full-attn 在第 7/15/23/31 层，backbone ≈630M。
+
+**44.** ⭐⭐ 32 层的 attention 怎么排？为什么？window 会减少 token 数吗？
+
+> **答：** **28 层 window + 4 层 full**（第 7/15/23/31 层）。因为全 full attention 是 $O(N^2)$，高分辨率下 $N$ 有几千。所以做成"大量 local perception + 周期性 global information exchange"，这也是它能支持 native dynamic resolution 的原因。
+> ⚠️ window attention **不减少 token 数**，只限制每个 token 能看到谁。压 token 是 PatchMerger 的事。
+
+**45.** ⭐ Qwen2.5-VL 的 ViT block 和经典 ViT block 差在哪？
+
+> **答：** norm 用 **RMSNorm**；FFN 是 **SwiGLU** 风格 $W_{down}[\text{SiLU}(W_{gate}x)\odot W_{up}x]$，$1280\to3420\to1280$，不是单层 GELU。attention 双向（`is_causal=False`）。整体更像现代 LLM 的 block。
+
+**46.** ⭐⭐ ViT 里的 2D RoPE 和 LLM 里的 MRoPE 是一回事吗？
+
+> **答：** **不是。** ViT 内部按 patch 的 $(h,w)$ 网格坐标构造 position id，在 $Q/K$ 上加二维 rotary，说的是"这个 patch 在第几行第几列"。MRoPE 是 LLM 内部的位置编码。两个不同层级的模块。
+
+**47.** ⭐ PatchMerger 做哪两件事？为什么 concat 不是 pooling？
+
+> **答：** ① $2\times2$ 空间合并，四个 1280 维 token **concat** 成 5120，$N\to N/4$；② $\text{RMSNorm}\to\text{Linear}(5120,5120)\to\text{GELU}\to\text{Linear}(5120,3584)$。
+> concat 是为了**先保住信息再让 MLP 学怎么压**，average pooling 会直接抹掉四个 token 的差异。
+
+**48.** ⭐ 一个 LLM visual token 对应原图多大？$448\times448$ 有多少？
+
+> **答：** $14\times14$ patch 再 $2\times2$ merge $\Rightarrow\boxed{28\times28}$ 像素，$N_{\text{LLM-vis}}=\frac H{28}\frac W{28}$。$448\times448\Rightarrow256$（ViT 内部是 1024）。
+
+**49.** ⭐⭐ visual embedding 怎么进 LLM 序列的？有 cross-attention 吗？
+
+> **答：** **没有 cross-attention。** chat template 里先放占位符 `<|image_pad|>`，processor 按 $\frac{T_gH_gW_g}{\text{merge}^2}$ 展开成 256 个；文字走正常 embedding lookup（`<|vision_start|>` 等 special token 也有自己的 embedding）；然后找到所有 `image_token_id` 的位置，用 `masked_scatter` 把这些占位符的 embedding **整个替换成** vision encoder 的输出。之后就是一条普通 $L\times3584$ 序列。
+> 这就是 projector 必须输出 3584 的原因 —— 要和 text embedding 同空间同维度。
+
+**50.** ⭐ Stage 1 里 LLM 冻结，ViT 怎么学？
+
+> **答：** 冻结只是**不更新** $\theta_{LLM}$，梯度照样穿过去：$\frac{\partial L}{\partial\theta_V}=\frac{\partial L}{\partial V}\frac{\partial V}{\partial\theta_V}$。等于把 LLM 当固定的语言解释器，逼 ViT 学出"能让它正确预测 caption/OCR"的视觉表示。
+
+**51.** ⭐⭐ Qwen2.5-VL 的 Stage 1 训不训 projector？
+
+> **答：** **报告没说。** 只写了 "only the Vision Transformer is trained" + LLM frozen，没单独交代 merger。可能是字面意思，也可能是表格把 ViT+Merger 统称 vision part。**不要编**，答"报告明确 ViT train / LLM frozen，但没有单独交代 merger 的 freeze 状态"。
+
+**52.** Qwen2.5-VL 的 ViT 是 SigLIP 初始化的吗？
+
+> **答：** **不是。** Qwen 自研并从零训练，先用 DataComp 等做 CLIP 式视觉预训练。"from scratch" 指**没拿现成 SigLIP/CLIP 权重当视觉塔**，不是随机 ViT 直接和 LLM 裸训（那是 Kimi K3 MoonViT-V2 更激进的做法）。Qwen3-VL 才是明确从 SigLIP-2 checkpoint 初始化。
+
+## G. DeepStack 与 Qwen 演进（[06](06-deepstack-and-qwen-evolution.md)）
+
+**53.** ⭐ 三代的 patch / depth / hidden / attention 分别是什么？vision encoder 变大了吗？
+
+> **答：** Qwen2.5-VL：patch 14、32 层、1280、window 为主 + 4 层 global。Qwen3-VL / Qwen3.5：patch 16、27 层、1152、**全局 attention**。
+> **没变大，反而变小了**（$1280\to1152$、$32\to27$）。
+
+**54.** Qwen3-VL 的 ViT 位置编码多了什么？
+
+> **答：** 多了一套 **learned absolute PE**：`nn.Embedding(2304, hidden)`，$2304=48\times48$，实际 grid 不同时做 bilinear 插值再 $x_i\leftarrow x_i+p_i$。加上原有的 2D RoPE。
+> 分工：absolute PE 说"我大概在哪"，2D RoPE 在 attention 里说"你俩相对空间关系"。
+
+**55.** ⭐⭐ DeepStack 取哪几层？为什么每路都要一个自己的 merger？
+
+> **答：** `[8,16,24]` 加上最终的 $X_{27}$。每路都要自己的 merger 是因为 ViT hidden 1152 和 LLM hidden 4096 的 **token 数和维度两边都对不上**，必须各自过 $2\times2$ merge + MLP：$4\times1152=4608\to4608\to4096$。
+
+**56.** ⭐⭐ DeepStack 是 concat 吗？会撑长 sequence 吗？
+
+> **答：** **不是 concat**，那样 token 数会变 4 倍。是 **element-wise addition**：`hidden_states[visual_pos_masks,:] + visual_embeds`，即 $h_{visual}\leftarrow h_{visual}+D_k$。$\boxed{\text{不增加 sequence length}}$，visual token 仍是 $N/4$。
+
+**57.** ⭐⭐ LLM 输入已经是 ViT 最后一层，为什么 layer 0 后又加更浅的 $X_8$？
+
+> **答：** 不是一一对应式的"ViT 8→LLM 0、ViT final→LLM 3"。实际是 **ViT final 作为正常 LLM input**，$X_8/X_{16}/X_{24}$ 经各自 merger 后在 LLM layer 0/1/2 **之后**作为额外 residual 加到 visual 位置。
+> 本质 = final semantic feature + multi-level residual，等于 **ViT → LLM 的 skip connection**。名字里的 "Deep Stack" 是指在 **network depth** 上 stack，不是在 sequence 上。
+
+**58.** ⭐ DeepStack 的动机？为什么 VLM 特别吃这个？
+
+> **答：** ViT 浅层是 edge/texture/小字/OCR 字形，中层是 parts/object/region，深层才是 semantic。只用最后一层，低层细节已被 20 多层重新编码甚至弱化。而 VLM 很吃 OCR / GUI / chart / document / grounding / 小目标这些对局部空间细节敏感的任务。一句话：**不要要求 ViT final feature 一个人承担所有视觉信息**。
+
+**59.** ⭐⭐ Qwen3.5 为什么删掉 DeepStack？
+
+> **答：** 主因**训练范式变了**。Qwen3-VL 是 SigLIP2 + Qwen3 两个各自练好的模块拼起来，vision representation 不是 LLM-native 的，所以既需要 S0 alignment，也需要 DeepStack 这种 architecture-level inductive bias 强制保留 multi-level 特征。Qwen3.5 走 early-fusion native multimodal pretraining，三块从 foundation pretraining 起联合优化，final representation 本身就是为这个 backbone 长出来的。
+> 次因：3 个额外 merger ≈120M 参数、四套大 MLP 的 prefill 计算、保留中间 activation + LLM 得知道哪层加哪级的工程复杂度。
+> ⚠️ **这是推断，官方没有公开 DeepStack 的删除 ablation。**
+
+**60.** ⭐⭐ "Native multimodal" 是不是没有 ViT / 图片也 autoregressive 生成？
+
+> **答：** **都不是。** Qwen3.5 仍有完整 vision encoder（HF 说 "vision tower reuses the Qwen3-VL encoder"），也仍然只在 text token 上算 loss、ViT 靠文本 CE 反传（$\nabla_{\theta_{ViT}}L\ne0$）。
+> "Native" 讲的是**训练方式**：不是先训好 text-only backbone 再外挂视觉，而是从 foundation pretraining 起就用 text/image/video 交错数据联合优化。所以不叫 Qwen3.5-VL，直接叫 Qwen3.5。
+
+**61.** 同分辨率下 Qwen3-VL 的 visual token 比 Qwen2.5-VL 多还是少？
+
+> **答：** **少约 23%**。$28\times28$ 像素/token → $32\times32$ 像素/token，比例 $(28/32)^2\approx0.766$。
+
+**62.** Qwen3.5 真正的大架构变化在哪？
+
+> **答：** **在 LLM 侧。** vision 还是 Qwen3-VL 那套，语言 backbone 换成 3:1 混合：$8\times(3\times\text{Gated DeltaNet}+1\times\text{Full Attention})=32$ 层。这才是它能扛大量 visual token / 长视频 / 长 context 的原因。
+
+**63.** ⭐⭐ 多模态 PT 时混了纯文本数据，ViT 有梯度吗？
+
+> **答：** **纯文本 batch 时没有。** 前向是 `text → LLM → CE`，根本不经过 ViT，所以 $\nabla_{\theta_V}L=0$，只有 LLM 收到梯度；VL batch 才是 ViT+Merger+LLM 都有梯度。
+> 之所以要混纯文本，是为了防止 language capability degradation。所以"ViT 是 trainable 的"和"ViT 每个 step 都在更新"是两回事。
+
+**64.** S0 为什么要先冻两端只训 merger？
+
+> **答：** 一开始 merger 是随机的（"ViT 说中文、merger 乱翻、LLM 只懂英文"）。如果直接全参数解冻，两个**已经很好的 pretrained representation** 都可能为了迁就一个很烂的中间接口而乱跑。先固定两端只训桥，把 vision feature space 大致映到 LLM embedding space，即 modality alignment。Qwen3-VL 的 3 个 DeepStack merger 同样在这阶段被同一个 CE 训练，不需要各自的 loss。

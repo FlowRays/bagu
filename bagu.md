@@ -134,6 +134,8 @@
             - umm
         - vision encoder
             - inductive bias
+            - patch embedding: conv3d, patchify
+            - qwen2.5-vl / qwen3-vl / qwen3.5, deepstack
         - vision-language alignment
         - mrope
         - resolution

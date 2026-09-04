@@ -67,6 +67,25 @@ $$\boxed{\text{CLIP/SigLIP：语言对齐强}}\qquad\boxed{\text{DINO：纯视�
 
 ## 4. 主流模型的实际配置
 
+> 三代 Qwen 的逐项对照（patch/depth/PE/DeepStack）见 [06 第 1 节](06-deepstack-and-qwen-evolution.md#1-三代放一起看)；
+> Qwen2.5-VL 的完整走查见 [05](05-qwen25-vl.md)。这里只列各家的 encoder 选型。
+
+### Qwen2.5-VL-7B：自研 ViT，不用 SigLIP
+
+| 参数 | 值 |
+|---|---:|
+| Vision depth | 32 layers |
+| hidden | 1280 |
+| MLP intermediate | 3420（SwiGLU） |
+| heads | 16 |
+| patch size | 14×14（temporal patch 2） |
+| attention | 28 层 window(112) + 第 7/15/23/31 层 full |
+| spatial merge | 2×2 |
+| output hidden | 3584 |
+| 参数量 | ≈630M |
+
+$$\boxed{\text{Qwen 自己从零训练的 ViT，没有拿现成 SigLIP/CLIP 权重当视觉塔}}$$
+
 ### Qwen3-VL-8B：SigLIP2 路线
 
 技术报告明确：vision encoder 用 **SigLIP-2 架构**，从官方 pretrained checkpoint 初始化，然后做 dynamic-resolution 继续训练。8B 用 SigLIP2-So400m，2B/4B 用约 300M 的 SigLIP2-Large。
@@ -88,11 +107,13 @@ $$\boxed{\text{Qwen3-VL ViT}=\text{SigLIP2 初始化}+\text{Qwen 特有改造}+\
 
 ### DeepStack：不只用最后一层
 
-普通做法只取 $ViT_{27}$ 的 feature。Qwen3-VL 额外在第 8/16/24 层各取一次 feature，各配一个 merger，然后**加到 LLM 前几层的 hidden state 上**：
+普通做法只取 $ViT_{27}$ 的 feature。Qwen3-VL 额外在第 8/16/24 层各取一次，各配一个自己的 merger，然后在 LLM 前几个 decoder layer 之后**逐元素加到 visual token 的 hidden state 上**（不是 concat，**不增加 sequence length**）：
 
-$$h_l\leftarrow h_l+h^{\text{vision}}_l$$
+$$h^{vision}_l\leftarrow h^{vision}_l+D_l$$
 
-好处是 intermediate ViT 的 texture / OCR / local / spatial feature 不必等到最后一层全变成高度 semantic 的表示才交给 LLM。官方说法是提升 fine-grained detail 与 image-text alignment。
+动机是浅层的 texture / OCR / 局部空间信息不必等到最后一层全变成高度 semantic 的表示才交给 LLM。
+
+> 完整机制（取哪层、怎么变维、加在哪、为什么 Qwen3.5 又删掉）见 [06 DeepStack 与 Qwen 演进](06-deepstack-and-qwen-evolution.md)。
 
 ### Qwen3.5-9B：native multimodal
 

@@ -135,9 +135,12 @@
       "files": [
        "notes/07-vlm/00-map.md",
        "notes/07-vlm/01-architecture.md",
+       "notes/07-vlm/01b-patch-embedding.md",
        "notes/07-vlm/02-vision-encoder.md",
        "notes/07-vlm/03-visual-token-compression.md",
        "notes/07-vlm/04-training-stages.md",
+       "notes/07-vlm/05-qwen25-vl.md",
+       "notes/07-vlm/06-deepstack-and-qwen-evolution.md",
        "notes/07-vlm/self-test.md"
       ],
       "dirs": []
