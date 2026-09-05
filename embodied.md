@@ -142,6 +142,7 @@ VLA 和 LLM 差别最大的一段，面试必问。
 
 - 演进线
     - RT-1 → RT-2（把动作当 token 接到 VLM 上）
+    - RT-X / Open X-Embodiment（多本体混合训练，粗对齐）
     - OpenVLA（开源基线）
     - **π0 / π0.5**（flow matching action expert）
     - GR00T、Helix、以及最新的一批

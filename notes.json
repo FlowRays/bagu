@@ -143,6 +143,7 @@
        "notes/07-vlm/04-training-stages.md",
        "notes/07-vlm/05-qwen25-vl.md",
        "notes/07-vlm/06-deepstack-and-qwen-evolution.md",
+       "notes/07-vlm/07-dinov2.md",
        "notes/07-vlm/self-test.md"
       ],
       "dirs": []
@@ -281,6 +282,7 @@
       "files": [
        "embodied/05-action/00-map.md",
        "embodied/05-action/01-action-space.md",
+       "embodied/05-action/01b-action-space-from-zero.md",
        "embodied/05-action/02-action-head.md",
        "embodied/05-action/03-chunking-and-realtime.md"
       ],
@@ -290,7 +292,8 @@
       "path": "embodied/06-vla/",
       "files": [
        "embodied/06-vla/00-map.md",
-       "embodied/06-vla/01-vla-models.md"
+       "embodied/06-vla/01-vla-models.md",
+       "embodied/06-vla/02-gen1-ar-vla.md"
       ],
       "dirs": []
      },

@@ -69,6 +69,8 @@ $$\text{off-the-shelf CLIP}\rightarrow\text{SigLIP2 初始化}\rightarrow\text{�
 
 ## 3. DINO：无标签的自蒸馏
 
+> 这里只给最小可用版本。DINOv2 的完整走查（ViT 配置、multi-crop、iBOT、KoLeo、**防坍缩的 sharpening/centering/Sinkhorn 三件套**）在 [07](07-dinov2.md)。
+
 **DINO = self-DIstillation with NO labels**，image-only 自监督：
 
 $$x_1=\text{Aug}_1(I),\quad x_2=\text{Aug}_2(I)$$
@@ -78,7 +80,7 @@ teacher **不反向传播**，是 student 的 EMA：
 
 $$\theta_t\leftarrow m\theta_t+(1-m)\theta_s$$
 
-再用 sharpening / centering 防止 $p_s=p_t=\text{const}$ 的 representation collapse。
+再用 sharpening / centering 防止 $p_s=p_t=\text{const}$ 的 representation collapse（[两者互相制衡的机制](07-dinov2.md#dino-用两个方向相反的力互相制衡)：sharpening 防均匀坍缩、centering 防独占坍缩，单用任何一个都会塌）。
 
 ### 卡点：DINO 和 CLIP 学的东西很不一样
 

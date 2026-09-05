@@ -4,6 +4,7 @@
 
 | 篇 | 内容 |
 |---|---|
+| [01b 动作空间从零](01b-action-space-from-zero.md) | **机器人前置**：DoF / 关节与连杆、FK 与 IK、四种旋转表示手算、**维度不等于自由度** |
 | [01 动作空间与表示](01-action-space.md) | 关节 / 末端 / 高层三层、**旋转为什么要 6D 表示**、delta vs absolute、归一化、wrist camera |
 | [02 Action head](02-action-head.md) | 回归 / 离散 tokenization / diffusion / **flow matching** 四种做法的取舍、FAST、action expert |
 | [03 Chunking 与实时性](03-chunking-and-realtime.md) | ACT 的 action chunking、temporal ensembling、三个频率、异步推理的延迟对齐 |

@@ -53,6 +53,9 @@ CLIP/SigLIP/DINO pretrain → projector alignment → multimodal pretrain → SF
 | 20 | Qwen3.5 为什么反而删掉 DeepStack | [06](06-deepstack-and-qwen-evolution.md#8-那-qwen35-为什么把-deepstack-删了) |
 | 21 | native multimodal 是不是就没有 ViT 了 | [06](06-deepstack-and-qwen-evolution.md#9--native-multimodal-不等于没有-vit) |
 | 22 | 混纯文本数据时 ViT 有没有梯度 | [04](04-training-stages.md#-混纯文本数据时vit-拿不到梯度) |
+| 23 | 没有负样本、teacher 还来自 student，为什么不坍缩 | [07](07-dinov2.md#8-最关键的问题为什么不坍缩) |
+| 24 | iBOT 和 MAE 有什么区别 | [07](07-dinov2.md#卡点ibot-不是-mae) |
+| 25 | DINO head 的 65536 维是不是视觉特征的维度 | [07](07-dinov2.md#卡点这里的-k-不是类别) |
 
 ## 阅读顺序
 
@@ -63,6 +66,7 @@ CLIP/SigLIP/DINO pretrain → projector alignment → multimodal pretrain → SF
 5. [04 多阶段训练：每阶段的 loss 和更新谁](04-training-stages.md)
 6. [05 Qwen2.5-VL 完整走查](05-qwen25-vl.md) — 从 pixel 到 LLM 序列，每步都有 shape
 7. [06 DeepStack 与 Qwen 演进](06-deepstack-and-qwen-evolution.md) — 2.5-VL → 3-VL → 3.5
-8. [自测题](self-test.md)
+8. [07 DINOv2 完整走查](07-dinov2.md) — 架构没有魔法，魔法全在训练；防坍缩三件套
+9. [自测题](self-test.md)
 
-相关：[大模型参数构成](../04-distributed-infra/03-model-param-breakdown.md)（vision 塔在超大 MoE 里只占万分之几）。
+相关：[大模型参数构成](../04-distributed-infra/03-model-param-breakdown.md)（vision 塔在超大 MoE 里只占万分之几）；[第一代 VLA](../../embodied/06-vla/02-gen1-ar-vla.md)（OpenVLA 把 DINOv2 和 SigLIP 并联当 VLA 的视觉侧）。

@@ -50,6 +50,41 @@ t=2  预测       [a2''a3''...]
 
 实践上和任务动态性有关：静态桌面操作可以 $H$ 大，有人干扰或物体会动的场景要 $H$ 小。
 
+## 3b. 只说 horizon=50 是不够的
+
+$$\boxed{\text{chunk duration}=\frac{H}{f}}$$
+
+| 数据集 | $H$ | $f$ | 实际覆盖 |
+|---|---:|---:|---|
+| A | 20 | 10 Hz | **2 s** |
+| B | 20 | 50 Hz | **0.4 s** |
+
+同样是 20 步 chunk，学到的 temporal scale 差 5 倍。**看论文只看到 horizon 而不看 control frequency，等于没看懂。**
+
+也正因为这样，真机数据经常要 downsample：底层控制可能跑 1000 Hz，但 VLA 没必要学 1000 Hz 的电机控制，那是底层 controller 的事。
+
+```text
+VLA policy:        10 Hz   ← 数据也降采样到这个频率
+      ↓ target EE pose
+robot controller: 500 Hz
+      ↓
+motor
+```
+
+### 训练样本怎么从 episode 里切
+
+滑窗，一条 episode 能出很多样本：
+
+```text
+o0  → [a0 a1 a2 a3]
+o1  → [a1 a2 a3 a4]
+o2  → [a2 a3 a4 a5]
+```
+
+$$\boxed{\text{一条 trajectory}\ \to\ T\ \text{个训练样本}}$$
+
+⚠️ 所以"970k trajectories"这种数字**不是**训练样本数。第一代的 [OpenVLA](../06-vla/02-gen1-ar-vla.md#一条-trajectory-拆成-t-个样本) 甚至连 chunk 都没有（$H=1$），一条 trajectory 直接拆成 $T$ 个单步 transition。
+
 ## 4. 实时性：三个频率要分清
 
 $$\boxed{\text{控制频率} \ \gg\ \text{推理频率},\qquad \text{chunk 把两者解耦}}$$

@@ -1,11 +1,14 @@
 # VLA 模型：架构与训练
 
+> 这一篇是一页纸的全景。第一代（RT-1 → RT-2 → RT-X → OpenVLA）的逐 tensor 走查在 [02](02-gen1-ar-vla.md)。
+
 ## 1. 演进线
 
 | 模型 | 关键贡献 |
 |---|---|
-| **RT-1** | Transformer 做机器人策略，动作离散化，大规模真机数据 |
+| **RT-1** | Transformer 做机器人策略，动作离散化，大规模真机数据（⚠️ [11 维是并行分类，不是自回归](02-gen1-ar-vla.md#卡点rt-1-不是-llm-式的自回归)） |
 | **RT-2** | **把动作当 token 接到 VLM 上**，第一次证明网络知识能迁移到动作（"把香蕉放到德国国旗上"这类语义泛化） |
+| **RT-X** | 多本体数据混合训练，验证了正迁移；但 [action 只是粗对齐](02-gen1-ar-vla.md#rt-x-的-cross-embodiment-是粗对齐) |
 | **OpenVLA** | 开源基线，7B、Prismatic VLM + 动作 tokenization，成为大家的对照组 |
 | **π0 / π0.5** | **flow matching action expert**，高频、多模态、跨本体；π0.5 强调开放世界泛化 |
 | **GR00T** | 开放的人形机器人基础模型 + 合成数据管线 |

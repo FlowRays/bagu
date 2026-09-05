@@ -315,3 +315,60 @@
 **64.** S0 为什么要先冻两端只训 merger？
 
 > **答：** 一开始 merger 是随机的（"ViT 说中文、merger 乱翻、LLM 只懂英文"）。如果直接全参数解冻，两个**已经很好的 pretrained representation** 都可能为了迁就一个很烂的中间接口而乱跑。先固定两端只训桥，把 vision feature space 大致映到 LLM embedding space，即 modality alignment。Qwen3-VL 的 3 个 DeepStack merger 同样在这阶段被同一个 CE 训练，不需要各自的 loss。
+
+## H. DINOv2（[07](07-dinov2.md)）
+
+**65.** DINOv2 的 backbone 有什么特别之处？位置编码是什么？
+
+> **答：** **基本没有特别之处**，就是标准 ViT：patch 14、CLS + patch token、Pre-LN + LayerScale + DropPath。四个规模 S/B/L/g 的 $d_{\text{head}}$ 都是 64，scale 的是 hidden/depth/heads。
+> 位置编码是 **learned absolute PE**，换分辨率靠二维插值 —— **不是 RoPE**，和 Qwen2.5-VL 的 2D RoPE 完全不是一路设计。
+> DINOv2 的价值全在训练配方。
+
+**66.** ⭐ 训练时的模型和推理时的模型差在哪？
+
+> **答：** 训练时是 `Student(ViT + DINO head + iBOT head)` + `Teacher(同结构，无梯度)`。**两个 head 训完就扔**，做 VLM/VLA vision encoder 的只有 ViT backbone。
+> 所以看到"65536 维 prototype"不要以为视觉特征是 65536 维的。
+
+**67.** multi-crop 里 teacher 和 student 各看什么？
+
+> **答：** teacher **只看 2 个 global crop**，student 看 global + 8 个 local crop。目标变成"只看到狗头也要产生和看整只狗一致的语义"，view invariance 就是这么来的。
+
+**68.** ⭐ DINO loss 里的 $k$ 是类别吗？
+
+> **答：** **不是，根本没有 label。** 是 learned **prototype**，视觉 latent space 里的锚点，没人给它们起名字。head 是 $D\to2048\to2048\to256\to65536$ 的 MLP，唯一目的是构造一个适合自蒸馏的预测空间。
+
+**69.** ⭐⭐ iBOT 和 MAE 的区别？这个区别的后果是什么？
+
+> **答：** MAE 预测 **RGB 像素**（$\|x-\hat x\|^2$），容易学到纹理颜色这类低级统计；iBOT 预测 **teacher 的语义 feature**（soft CE），学的是"这块区域在语义空间里是什么"，teacher 在这里扮演 **online tokenizer**。
+> 后果：DINOv2 的 dense feature 特别好。消融显示去掉 iBOT，ADE20K 分割从 **47.1 掉到 44.2 mIoU**。
+> 另外 mask **不是把像素涂黑**，是在 patch embedding 之后把那个 token 换成 learned `mask_token`。
+
+**70.** ⭐ 两种坍缩长什么样？
+
+> **答：** **A（独占）**：每张图都输出 $[0.99,0,0,0.01]$，都很自信但都一样。**B（均匀）**：每张图都输出 $[0.25,0.25,0.25,0.25]$。
+> 共同点是 $p(x_1)=p(x_2)=p(x_3)$，只是塌向相反的两头。
+
+**71.** ⭐⭐ sharpening 和 centering 各防哪一种？为什么必须同时用？
+
+> **答：** **sharpening**（teacher 低 temperature，$\tau_T:0.04\to0.07$）防**均匀坍缩 B**；**centering**（减 batch 内 logits 的 EMA 均值）防**独占坍缩 A**。
+> 必须同时用的原因是 **sharpening 单独用会正反馈引爆 A**：某 prototype 稍占优 → sharpen 放大 → student 模仿 → teacher EMA 跟随 → 更占优。centering 就是来打断这个环的。
+> 一句话：**sharpening 对单张图说"你得选一个"，centering 对整个 batch 说"但不能都选同一个"**。
+
+**72.** DINOv2 相对原版 DINO 在防坍缩上改了什么？有了它 teacher 还需要 EMA 吗？
+
+> **答：** 大规模配方用 **Sinkhorn-Knopp**（3 次迭代）代替单纯的 moving-average centering，交替在 prototype 维和 sample 维归一化。
+> **仍然需要 EMA**：teacher 直接等于 student 的话，student 在追一个跟着自己一起乱跑的 target，系统不稳定。EMA（$m:0.994\to1.0$ cosine）让 teacher 成为低通滤波版本，是一个更稳定的 **online target generator** —— 和 RL 的 target network 同一个思想。
+
+**73.** DINOv2 的总 loss？三项各管什么？
+
+> **答：** $L=L_{\text{DINO}}+L_{\text{iBOT}}+0.1L_{\text{KoLeo}}$。
+> **DINO** 管 CLS / 全局语义 / 跨 crop 一致；**iBOT** 管 patch / 局部语义 / 空间结构；**KoLeo**（$-\frac1B\sum_i\log d(i,\text{NN}(i))$）管 CLS 特征分布，最小化它等于把最近邻距离拉大，别让不同图片挤在一起。
+
+**74.** `ViT-L/14-reg` 的 register token 是 DINOv2 的一部分吗？
+
+> **答：** **不是**，来自后续的 *Vision Transformers Need Registers*，在 CLS 后加 4 个 learnable token。入门可以忽略。
+
+**75.** ⭐ 为什么具身模型常把 SigLIP 和 DINO 并联？
+
+> **答：** 机器人既要"哪个是 red cup"（语言对齐，SigLIP 强），又要"杯口在哪、gripper 离它多远、边缘在哪"（dense spatial，DINOv2 强）。
+> 记：**SigLIP 回答 what，DINOv2 回答 where**。[OpenVLA](../../embodied/06-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip) 就是在 **channel 维**拼接两者（$1024+1152=2176$），序列长度仍然是 256。
