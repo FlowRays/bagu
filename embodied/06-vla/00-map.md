@@ -4,12 +4,13 @@
 |---|---|
 | [01 架构与训练](01-vla-models.md) | RT-1→RT-2→OpenVLA→π0 演进、典型架构的三个设计位、co-training 防遗忘、两阶段训练、数据金字塔、推理效率 |
 | [02 第一代 AR VLA](02-gen1-ar-vla.md) | **RT-1 / RT-2 / RT-X / OpenVLA 逐 tensor 拆开**：FiLM、TokenLearner、动作伪装成语言、co-fine-tuning、粗对齐的 cross-embodiment、DINOv2+SigLIP 通道拼接 |
+| [03 G0.5 架构与源码](03-g05-architecture.md) | Qwen3.5 多模态输入、ActionCodec、统一推理与动作 token、视觉记忆、AR / FM 配置与源码阅读顺序 |
 
 ## 一句话
 
-$$\boxed{\text{VLA} = \text{VLM backbone} + \text{action expert} + \text{action chunk}}$$
+VLA 将视觉、语言和机器人状态映射为动作。常见实现包括 **VLM + 连续动作 expert**，以及 **VLM 自回归生成动作 token + codec 解码**（见 [G0.5](03-g05-architecture.md)）。
 
-三个核心约束导出全部设计：**动作多模态**（生成式 head）、**实时性**（chunk + 小 expert + flow）、**数据极贵**（跨本体预训练 + 无标注视频）。
+三个核心约束帮助理解设计：**动作多模态**（生成式建模）、**实时性**（chunk、动作压缩或小 expert）、**数据极贵**（跨本体预训练与视觉语言数据共训）。
 
 ## 三个必须记住的"不等于"
 

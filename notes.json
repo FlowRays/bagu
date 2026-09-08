@@ -293,7 +293,8 @@
       "files": [
        "embodied/06-vla/00-map.md",
        "embodied/06-vla/01-vla-models.md",
-       "embodied/06-vla/02-gen1-ar-vla.md"
+       "embodied/06-vla/02-gen1-ar-vla.md",
+       "embodied/06-vla/03-g05-architecture.md"
       ],
       "dirs": []
      },
