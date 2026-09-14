@@ -29,6 +29,8 @@ $$\log p(x)\ \ge\ \underbrace{\mathbb E_{q_\phi(z|x)}[\log p_\theta(x|z)]}_{\tex
 
 在具身里 VAE 主要不是当生成器用，而是当**压缩器**（latent diffusion 的第一级、video VAE）。
 
+从零逐 tensor 走一遍 AE → VAE → VQ-VAE → latent diffusion 见 [01b](01b-ae-vae-from-zero.md)。
+
 ## 3. GAN
 
 生成器和判别器对抗。采样一步、图像锐利，但训练不稳、mode collapse（只生成少数几种），而且**没有似然**难以评估。

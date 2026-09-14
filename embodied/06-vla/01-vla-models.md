@@ -10,7 +10,8 @@
 | **RT-2** | **把动作当 token 接到 VLM 上**，第一次证明网络知识能迁移到动作（"把香蕉放到德国国旗上"这类语义泛化） |
 | **RT-X** | 多本体数据混合训练，验证了正迁移；但 [action 只是粗对齐](02-gen1-ar-vla.md#rt-x-的-cross-embodiment-是粗对齐) |
 | **OpenVLA** | 开源基线，7B、Prismatic VLM + 动作 tokenization，成为大家的对照组 |
-| **π0 / π0.5** | **flow matching action expert**，高频、多模态、跨本体；π0.5 强调开放世界泛化 |
+| **π0 / π0.5** | **flow matching action expert**，高频、多模态、跨本体；π0.5 强调开放世界泛化（[逐层拆解](03-pi0-pi05-g0.md)） |
+| **G0 / G0.5** | G0：独立 planner + π0.5 式 VLA + 单本体预训练；G0.5：一个 VLM 同时生成推理和 ActionCodec 动作 token（[G0](03-pi0-pi05-g0.md)、[G0.5](04-g05-architecture.md)） |
 | **GR00T** | 开放的人形机器人基础模型 + 合成数据管线 |
 
 $$\boxed{\text{主线：动作从「单独的 head」变成「VLM 的一部分」，再变成「挂在 VLM 上的专用 expert」}}$$

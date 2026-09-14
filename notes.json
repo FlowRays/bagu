@@ -257,6 +257,7 @@
       "files": [
        "embodied/02-visual-generation/00-map.md",
        "embodied/02-visual-generation/01-generative-models.md",
+       "embodied/02-visual-generation/01b-ae-vae-from-zero.md",
        "embodied/02-visual-generation/02-diffusion.md",
        "embodied/02-visual-generation/03-flow-matching.md"
       ],
@@ -284,7 +285,8 @@
        "embodied/05-action/01-action-space.md",
        "embodied/05-action/01b-action-space-from-zero.md",
        "embodied/05-action/02-action-head.md",
-       "embodied/05-action/03-chunking-and-realtime.md"
+       "embodied/05-action/03-chunking-and-realtime.md",
+       "embodied/05-action/04-act-and-diffusion-policy.md"
       ],
       "dirs": []
      },
@@ -294,7 +296,9 @@
        "embodied/06-vla/00-map.md",
        "embodied/06-vla/01-vla-models.md",
        "embodied/06-vla/02-gen1-ar-vla.md",
-       "embodied/06-vla/03-g05-architecture.md"
+       "embodied/06-vla/03-pi0-pi05-g0.md",
+       "embodied/06-vla/04-g05-architecture.md",
+       "embodied/06-vla/05-frontier-routes.md"
       ],
       "dirs": []
      },
@@ -302,7 +306,9 @@
       "path": "embodied/07-data-sim/",
       "files": [
        "embodied/07-data-sim/00-map.md",
-       "embodied/07-data-sim/01-data-and-sim2real.md"
+       "embodied/07-data-sim/01-data-and-sim2real.md",
+       "embodied/07-data-sim/02-data-types.md",
+       "embodied/07-data-sim/03-simulators.md"
       ],
       "dirs": []
      },

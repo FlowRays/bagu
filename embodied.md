@@ -126,7 +126,8 @@ VLA 和 LLM 差别最大的一段，面试必问。
     - **Diffusion policy**：把动作序列当作要去噪的样本
     - **Flow matching head**：π0 系列，少步、快
 - **Action chunking**
-    - ACT：一次预测未来 $H$ 步动作
+    - ACT：一次预测未来 $H$ 步动作；CVAE 结构，推理取 $z=0$
+    - Diffusion Policy：$T_o/T_p/T_a$、receding horizon
     - 为什么能缓解 compounding error 和多模态
     - **temporal ensembling**：重叠 chunk 加权平均
     - chunk 长度与延迟的权衡
@@ -144,8 +145,9 @@ VLA 和 LLM 差别最大的一段，面试必问。
     - RT-1 → RT-2（把动作当 token 接到 VLM 上）
     - RT-X / Open X-Embodiment（多本体混合训练，粗对齐）
     - OpenVLA（开源基线）
-    - **π0 / π0.5**（flow matching action expert）
-    - GR00T、Helix、以及最新的一批
+    - **π0 / π0.5**（flow matching action expert；π0.5 FAST 预训练 + 子任务 + flow 执行）
+    - **G0 → G0.5**（双系统 + 单本体预训练 → 一个 VLM 生成推理与 ActionCodec token）
+    - GR00T、Helix、以及最新的一批（DM0.5、Xiaomi-Robotics-1 / U0、OpenWAM 等）
 - 架构要点
     - VLM backbone（通常冻结或小 lr）+ **action expert**
     - 视觉输入：多相机、腕部相机、历史帧
@@ -164,6 +166,7 @@ VLA 和 LLM 差别最大的一段，面试必问。
     - **仿真**：便宜、可无限扩展、有 gap
     - **人类视频**：量大、缺动作标注 → latent action / 手部姿态估计
     - play data、autonomous collection
+    - UMI（手持夹爪 + 腕部相机 + SLAM/IMU 恢复位姿）、人类 Ego、MoCap retarget、神经合成数据
 - 数据集：Open X-Embodiment、DROID、RT-X、AgiBot 等
 - 数据金字塔：网络数据（语义）→ 人类视频（动作先验）→ 仿真 → 真机
 - 质量问题：遥操作抖动、多模态标注、失败轨迹要不要留
@@ -171,6 +174,7 @@ VLA 和 LLM 差别最大的一段，面试必问。
 ## (8) 仿真与 sim2real
 
 - 仿真器：Isaac Sim / Isaac Lab、MuJoCo、SAPIEN、Genesis
+    - 物理引擎 ≠ 任务环境：MuJoCo → robosuite → LIBERO；Isaac Sim → Isaac Lab
 - 物理：刚体、接触求解、软体与流体的难点
 - sim2real 手段
     - **domain randomization**（视觉、动力学）

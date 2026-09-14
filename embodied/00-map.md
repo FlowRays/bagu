@@ -8,12 +8,12 @@
 | 册 | 内容 | 状态 |
 |---|---|---|
 | [01 总览](01-overview/00-map.md) | 和 LLM 的五个本质差异、三种范式各赌什么、概念对照表 | 第一版 |
-| [02 视觉生成](02-visual-generation/00-map.md) | 生成模型谱系、**Diffusion**、**Flow Matching** | 第一版 |
+| [02 视觉生成](02-visual-generation/00-map.md) | 生成模型谱系、**01b AE→VAE→VQ-VAE→Latent Diffusion 从零**、**Diffusion**、**Flow Matching** | 第一版 |
 | [03 世界模型](03-world-model/00-map.md) | 三条路线、Dreamer/RSSM、Genie 的 latent action、视频生成能否当世界模型 | 第一版 |
 | [04 JEPA](04-jepa/01-jepa.md) | 表示空间预测、防坍缩、I-JEPA、**V-JEPA 2-AC 与规划** | 第一版 |
-| [05 Action](05-action/00-map.md) | 动作空间与 6D 旋转、**四种 action head**、chunking 与实时性；**01b 从零补机器人前置**（DoF/FK/IK/旋转表示） | 第一版 |
-| [06 VLA 模型](06-vla/00-map.md) | RT-2→OpenVLA→π0 演进、架构、co-training、两阶段训练；**02 第一代逐 tensor 走查** | 第一版 |
-| [07 数据与仿真](07-data-sim/00-map.md) | 四类数据源、遥操作质量、人类视频的三条利用路线、sim2real | 第一版 |
+| [05 Action](05-action/00-map.md) | 动作空间与 6D 旋转、**四种 action head**、chunking 与实时性；**01b 从零补机器人前置**（DoF/FK/IK/旋转表示/正逆动力学）；**04 ACT 与 Diffusion Policy** | 第一版 |
+| [06 VLA 模型](06-vla/00-map.md) | RT-2→OpenVLA→π0 演进、架构、co-training、两阶段训练；**02 第一代逐 tensor 走查**、**03 π0→π0.5→G0**、**04 G0.5 架构/ActionCodec/数据**、**05 前沿路线（DM0.5、小米、RoboDojo 前排）** | 第一版 |
+| [07 数据与仿真](07-data-sim/00-map.md) | 四类数据源、遥操作质量、人类视频的三条利用路线、sim2real；**02 UMI / Ego / Teleop 等数据类型与采集**、**03 MuJoCo / LIBERO / Isaac 环境栈** | 第一版 |
 | [08 具身 RL](08-embodied-rl/00-map.md) | 和 LLM RL 的五个差异、reward hacking、GRPO 在 VLA 上的三个问题 | 第一版 |
 | [09 评测](09-eval/00-map.md) | 仿真 benchmark、真机评测难点、五个陷阱 | 第一版 |
 | [10 手撕实现](10-handwrite/00-map.md) | Diffusion / DDIM / CFG / Flow matching / Action chunking 的最小实现，含**证明「不能用 MSE 回归动作」的可运行实验** | 第一版 |

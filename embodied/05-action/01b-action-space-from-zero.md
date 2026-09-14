@@ -1,6 +1,6 @@
 # 动作空间从零：DoF、正逆运动学、旋转表示
 
-> [01](01-action-space.md) 是结论版。这一篇是**机器人前置**：从"一条 action 里每个数字到底是什么"讲起。
+> [01](01-action-space.md) 是结论版。这一篇是**机器人前置**：从"一条 action 里每个数字到底是什么"讲起，最后往下补一层正逆动力学。
 > 没做过机器人的话先看这篇，看完再回 01 会很快。
 
 一句话：读任何 VLA 之前必须能回答的问题是
@@ -321,6 +321,84 @@ camera image I_t  +  proprioception s_t  +  instruction l
                     机器人真的动了
 ```
 
+## 13. 再往下一层：正动力学与逆动力学
+
+FK / IK 只回答"关节和手的**几何**关系"。机器人真正动起来还要回答"**用多大力、会怎么动**"，这就是动力学。四个概念放一起记，是两组"正问题 / 逆问题"：
+
+| | 已知 | 求 | 典型问题 |
+|---|---|---|---|
+| **FK 正运动学** | 关节位置 $q$ | 末端位姿 $x$ | 这些关节角下，手在哪？ |
+| **IK 逆运动学** | 末端目标位姿 $x$ | 关节位置 $q$ | 想让手到这，关节怎么转？ |
+| **正动力学** | $q,\dot q$ + 力矩 $\tau$ | 加速度 $\ddot q$ | 我这么用力，机器人会怎么动？ |
+| **逆动力学** | $q,\dot q,\ddot q$ | 所需力矩 $\tau$ | 我想这么动，需要多大力？ |
+
+$$\boxed{\text{运动学只管几何怎么动，不管力；动力学管力和运动之间的关系}}$$
+
+### 机器人动力学方程
+
+$$M(q)\ddot q+C(q,\dot q)\dot q+g(q)=\tau$$
+
+$M(q)$ 是惯性矩阵（质量分布），$C(q,\dot q)\dot q$ 是离心力 / 科氏力项，$g(q)$ 是重力项，$\tau$ 是关节力矩。入门阶段不用会推它，只要知道同一个方程两个方向用。
+
+**正动力学**：$(q,\dot q,\tau)\to\ddot q$。给关节施加力矩，算出加速度，再积分 $\ddot q\to\dot q\to q$ 得到下一时刻状态。**这就是 MuJoCo / Isaac 这类物理仿真器的主循环**（见 [仿真器](../07-data-sim/03-simulators.md)）：
+
+```text
+policy → torque τ → 正动力学 → q̈ → 积分 → q, q̇ → 下一状态 → policy ...
+```
+
+**逆动力学**：$(q,\dot q,\ddot q)\to\tau$，把方程直接算一遍：
+
+$$\tau=M(q)\ddot q+C(q,\dot q)\dot q+g(q)$$
+
+用途是把**规划好的轨迹变成电机指令**。比如人形机器人抬腿：planner 给出 hip / knee / ankle 的轨迹 $q(t)$，求导得到 $\dot q,\ddot q$，逆动力学算出"hip 80 Nm、knee 55 Nm、ankle 30 Nm"，电机照着出力，这条轨迹才执行得出来。
+
+### 四个概念放进一条控制链
+
+```text
+desired hand pose x*          (笛卡尔空间)
+        │ IK
+        ▼
+desired joint pose q*
+        │ 轨迹规划
+        ▼
+q*, q̇*, q̈*
+        │ 逆动力学
+        ▼
+torque τ
+        │ 真机 / 仿真器（正动力学）
+        ▼
+q̈ → 积分 → q̇, q
+        │ FK
+        ▼
+actual hand pose x
+```
+
+两层分开看：
+
+```text
+几何层：joint space q  ⇄  Cartesian space x       FK: q→x      IK: x→q
+物理层：motion         ⇄  force / torque           正动力学: τ→q̈   逆动力学: q̈→τ
+```
+
+$$\boxed{\text{FK: }q\to x\qquad\text{IK: }x\to q\qquad\text{正动力学: }\tau\to\ddot q\qquad\text{逆动力学: }\ddot q\to\tau}$$
+
+（严格说动力学两边都还要带上当前的 $q,\dot q$。）
+
+### VLA 在哪一层
+
+绝大多数 VLA 在**几何层**：输出 EE pose / delta 或 joint position，底层控制器（IK + PD / 逆动力学）负责把它变成力矩，也就是第 12 节那条链的上半段。**locomotion 的 RL policy** 则常直接输出 joint torque（或高频 joint target），更靠近物理层。
+
+### 2D 游戏角色有没有运动学？
+
+有。一个横版游戏角色的状态是 $(x,y,v_x,v_y)$：
+
+- **运动学**：$x_{t+1}=x_t+v^x_t\Delta t$，只描述位置、速度怎么变，不问原因。
+- **动力学**：按键 / 力怎么改变速度。按右 → 水平加速；按跳 → 给向上初速度，重力让 $v_y$ 逐帧下降。
+
+$$a_t\ \xrightarrow{\text{dynamics}}\ v_{t+1}\ \xrightarrow{\text{kinematics}}\ x_{t+1}$$
+
+它只是**没有多关节结构**，所以没有值得做的 FK / IK。机器人里"kinematics"常被默认成 FK / IK，才会让人以为游戏里只有动力学。对这种环境真正难的是 **transition dynamics** $(s_t,a_t)\to s_{t+1}$：当前速度多少、起跳延迟几帧、15 帧后轨迹会不会和敌人相交 —— 这正是 [世界模型](../03-world-model/01-world-model-map.md) 要学的东西。
+
 ## 读论文时的三层追问
 
 ```text
@@ -396,3 +474,24 @@ $$[\Delta x,\Delta y,\Delta z,\Delta r_x,\Delta r_y,\Delta r_z,g]$$
 
 > **答：** ① 控制哪个空间（joint / Cartesian）；② 预测什么物理量（position / velocity / torque）；③ 绝对还是增量。
 > 最常见的组合是 `Cartesian + position + delta`，即 $[\Delta x,\Delta y,\Delta z,\Delta r_x,\Delta r_y,\Delta r_z,g]$。
+
+**14.** FK、IK、正动力学、逆动力学各自已知什么、求什么？
+
+> **答：** **FK**：$q\to x$（关节角求末端位姿）；**IK**：$x\to q$（末端目标反解关节角）；**正动力学**：$(q,\dot q,\tau)\to\ddot q$（施加力矩会怎么加速）；**逆动力学**：$(q,\dot q,\ddot q)\to\tau$（想这么动需要多大力矩）。
+> 前两个是几何层，不管力；后两个是物理层，管力和运动的关系。
+
+**15.** 写出机器人动力学方程。正动力学和逆动力学各用在哪？
+
+> **答：** $M(q)\ddot q+C(q,\dot q)\dot q+g(q)=\tau$（惯性项 + 离心/科氏项 + 重力项 = 关节力矩）。
+> **正动力学**是物理仿真器的主循环：policy 出 $\tau$ → 算 $\ddot q$ → 积分出 $\dot q,q$ → 下一状态。
+> **逆动力学**把规划好的轨迹 $q(t)$（求导得 $\dot q,\ddot q$）变成每个电机要出的力矩，比如人形抬腿时算出 hip / knee / ankle 各多少 Nm。
+
+**16.** 画出从"目标手部位姿"到"实际手部位姿"的控制链。VLA 一般在哪一层？
+
+> **答：** $x^*$ →IK→ $q^*$ →轨迹规划→ $q^*,\dot q^*,\ddot q^*$ →逆动力学→ $\tau$ →真机/仿真（正动力学）→ $\ddot q\to\dot q,q$ →FK→ 实际 $x$。
+> VLA 通常在几何层，输出 EE pose / joint position，底层控制器负责变成力矩；locomotion 的 RL policy 则可能直接输出 torque，更靠近物理层。
+
+**17.** 2D 横版游戏角色只有动力学、没有运动学吗？
+
+> **答：** 不是。$x_{t+1}=x_t+v_t\Delta t$ 就是运动学；按键改变速度、重力让 $v_y$ 下降是动力学：$a_t\to v_{t+1}\to x_{t+1}$。
+> 它只是没有多关节结构，所以没有 FK / IK。机器人里 kinematics 常特指 FK / IK 才造成这个误解。这类环境真正难的是 transition dynamics $(s_t,a_t)\to s_{t+1}$。

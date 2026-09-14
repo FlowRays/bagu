@@ -1,9 +1,13 @@
 # G0.5：从多模态观测到机器人动作
 
 > 基于 2026-09-08 阅读的本地 `GalaxeaVLA` 仓库及 [G0.5 论文](https://arxiv.org/html/2608.11739v1)。
-> 前置：[VLM 架构](../../notes/07-vlm/01-architecture.md)、[动作空间从零](../05-action/01b-action-space-from-zero.md)。
+> 前置：[VLM 架构](../../notes/07-vlm/01-architecture.md)、[动作空间从零](../05-action/01b-action-space-from-zero.md)、[第二代 VLA：π0 → π0.5 → G0](03-pi0-pi05-g0.md)。
 
 **G0.5 的核心：把一段机器人动作压缩成 token，让同一个视觉语言模型生成推理文字和动作 token，再把动作 token 解码成连续控制。**
+
+从 G0 过来，变化是一句话：G0 是 **Qwen2.5-VL planner + PaLI-Gemma VLA + flow action expert** 三套参数的双系统；G0.5 合成**一个 Qwen3.5 2B**，官方叫 **VLM-as-Actor**（对照 π0 / G0 的 VLM-as-Encoder）。三个创新点：**ActionCodec**（动作 token 太多 + 跨本体）、**Native CoT**（推理和控制脱节）、**Visual Memory**（单帧缺历史）。
+
+$$\boxed{\text{one transformer + one token stream + one CE loss}}$$
 
 阅读时先区分两个层次：论文强调统一的自回归（AR）动作生成；这个代码仓库还支持独立 Action Expert 的 Flow Matching（FM）路径。具体运行哪一条，由任务配置决定。不能只看到 `action_expert` 类，就把 G0.5 的主线理解成 FM。
 
@@ -109,6 +113,43 @@ VLM 生成动作 token → RVQ 码本还原 latent → Codec Decoder → 连续�
 
 对应源码：`src/g05/tokenizer/models/actioncodec2_v2/modeling_actioncodec2v2.py` 的 `encode()` / `decode()`；参数见 `configs/tokenizer/actioncodec.yaml`，实际残差轮数等还受任务配置覆盖。
 
+### 一段 32 步动作最后变成几个 token？
+
+OpenVLA 式逐标量量化，$H=32$、$D=27$ 就是 $864$ 个 token。ActionCodec 编码的是**一整段运动**，按 `actioncodec.yaml` 的默认结构，一个部件组的形状流是：
+
+```text
+(B, 32, D_i)                     一个部件组的 32 步动作
+  → 补齐到 9 维，block DCT（块长 8）
+  → 切成 4 个时间块，每块 8 步：(B, 8, 4, 9)
+  → conv_in：动作维 9 → 8
+  → encoder 时间维步长 2、2：4 个块 → 1
+  → (B, 128, 8)                  时间被压完，剩 8 个 latent 位置
+  → RVQ，最多 4 个码本（每个 4096 项）：codes (B, 4, 8)
+```
+
+所以论文里"**每个部件组、每轮残差 8 个动作码**"的 8，在这份实现里对应**压缩后动作维方向上的 8 个位置**，时间维已经压成 1；不要理解成"32 步里每 4 步一个码"。
+
+$$\boxed{\text{动作码数}\approx\text{活跃部件组数}\times\text{残差轮数}\times8\ (+\ \text{组标记})}$$
+
+`libero_ar.yaml` 用 `num_residuals: 2`，一个活跃手臂组约 16 个码；夹爪走规则式二值化，不经过 RVQ。输出序列形如：
+
+```text
+<right_control_0> 8 个码   ← 第 0 轮：粗的运动
+<right_control_1> 8 个码   ← 第 1 轮：补残差细节
+```
+
+组标记 `<right_control_0>` 不是动作值，而是"下面是右臂组第 0 轮的码"。没动的组整组不输出。
+
+**RVQ 为什么能调轮数**：$z\approx c^{(1)}_{i_1}+c^{(2)}_{i_2}+\cdots$，每轮编码上一轮的残差，轮数越多重建越准。训练时 `quantizer_dropout: 0.5` 随机只用前几轮，所以推理时可以用 2 轮换速度，也可以用更多轮换精度。
+
+### Codec 是先单独训练的
+
+不是和 Qwen 一起端到端训。先在大量机器人轨迹上训练 $A\to\text{codes}\to\hat A$（重建 loss + commitment loss），训好后冻结当 **action tokenizer**，VLA 训练时离线把轨迹转成码，Qwen 只预测码本下标，永远不直接出浮点数。
+
+$$\boxed{\text{LLM 有 text tokenizer，G0.5 有 action tokenizer}}$$
+
+**token 一致性正则**：相似的运动如果编码成完全不同的码序列（前一时刻 `[12, 99, 503]`、后一时刻 `[911, 3, 1444]`），自回归模型很难学。代码里的 consistency loss 用**时间平移 ±1~3 帧、幅度缩放 ±2%~10%** 构造"语义等价"的正样本，要求它们编码出相同的码，并按 RVQ 层加权（`actioncodec.yaml` 的终态权重是粗层 1.0 → 细层 0.1，即粗码最该稳定）。⚠️ 这份后训练 tokenizer 配置里 `consistency_loss_weight: 0.0`，预训练 codec 是否开启以论文为准。
+
 ## 5. CoT 为什么能直接参与动作生成？
 
 下面是示意序列，省略了完整 chat 模板和特殊 token：
@@ -124,6 +165,17 @@ VLM 生成动作 token → RVQ 码本还原 latent → Codec Decoder → 连续�
 
 推理字段可以包含 `Subtask`（子任务）、`BBox`（目标框）、`Trace`（轨迹）和 `ActionHint`（动作提示）。这不要求每次把全部字段生成一遍：模板决定监督内容，推理配置决定是否启用。
 
+四个字段从抽象到具体，正好是一条 **语义 → 定位 → 轨迹 → 电机** 的阶梯：
+
+| 字段 | 例子 | 起什么作用 |
+|---|---|---|
+| `Subtask` | Pick up the red cup. | 任务分解（π0.5 / G0 planner 做的事） |
+| `BBox` | red cup [132, 81, 190, 160] | 视觉定位：说的物体在图像哪里 |
+| `Trace` | 2D 图像上夹爪的运动轨迹点 | 手接下来沿哪条视觉路径走 |
+| `ActionHint` | move the right gripper forward and close it | 帧级、贴近电机的语言提示 |
+
+所有生成段都算 CE，条件段（图像、本体标识、指令、状态）不算。主模型**没有**额外的动作回归 loss、flow loss 或蒸馏 loss。
+
 本地基础配置的 `predict_cot: false`。因此，“模型支持 CoT”和“这次运行生成 CoT”是两件事。模板构造见 `src/g05/data_processor/processor/samples_builder.py`。[README 模型概览](https://github.com/OpenGalaxea/GalaxeaVLA/blob/main/README_zh.md)
 
 ## 6. 视觉记忆放在哪里？
@@ -138,6 +190,8 @@ VLM 生成动作 token → RVQ 码本还原 latent → Codec Decoder → 连续�
 ```
 
 它让语言主干获得历史信息，同时控制视觉序列长度。论文采用分解的空间、时间注意力，并在训练时随机丢弃历史帧。[论文 §3.3](https://arxiv.org/html/2608.11739v1#S3.SS3)
+
+为什么不把历史帧 token 全塞进语言主干：$N$ 个视觉 token、$T$ 帧，注意力代价是 $O((NT)^2)$。README 给的预训练设置是 **5 秒窗口里采 6 帧**，历史 token 在视觉编码器最后一层丢掉，推理延迟因此有上界。
 
 源码在 `src/g05/models/g05/qwen35/vision.py`。基础 `g05.yaml` 的 `temporal_freq: 0`，没有启用这条时间注意力路径；实际是否使用记忆，需要查看最终配置与输入帧数。
 
@@ -195,7 +249,40 @@ $$x_t=(1-t)A+t\epsilon,\qquad v^*=\epsilon-A$$
 
 `fm.joint_training` 则控制 FM 损失是否通过条件缓存回传给 VLM。基础配置为 false，缓存会 detach；`libero.yaml` 覆盖为 true。它不表示整个模型是否处于 train 模式。
 
-## 9. 建议的源码阅读顺序
+## 9. 预训练数据与 recipe
+
+| 项 | G0.5 |
+|---|---|
+| 初始化 | Qwen3.5 2B VLM |
+| 机器人数据 | **14 种**真实与仿真本体，全部映射到 27 维分组布局 |
+| 视觉语言数据 | 通用 web VQA + embodied VQA + 自有标注 |
+| 配比 | VQA : 动作样本 = **1 : 4** |
+| 目标 | 机器人样本和 VQA 样本**同一个 CE** |
+| 阶段 | **单阶段异构预训练**（对照 G0 的三阶段） |
+
+机器人数据会自动生成 `Subtask / BBox / Trace / ActionHint` 标注，作为 CoT 监督。
+
+README 报告的结果：DROID 零样本 82.5%、Bridge-SimplerEnv 87.3%、RoboTwin 2.0 93.3%、LIBERO 98.9%、BEHAVIOR-1K 任务成功分 0.3136、R1-Lite / R1-Pro 真机微调后平均 76.7%。
+
+## 10. G0 和 G0.5 对同一个问题的两种回答
+
+G0 发现：跨本体预训练在本体差距大时会**负迁移**。
+
+```text
+G0：   跨本体难做 → 加一个单本体预训练阶段 → 再接 action expert
+G0.5： 跨本体难做 → 可能是动作表示太差 → 统一 27 维分组 + ActionCodec → 一个 AR VLM
+```
+
+| | π0.5 | G0 | G0.5 |
+|---|---|---|---|
+| 系统 | 一个模型 + expert | planner + VLA + expert | **一个 VLM** |
+| 高层推理 | 子任务 | 独立 planner 出子任务 | **四种 CoT 字段，同一条流** |
+| 预训练动作 | FAST token | FAST token | **ActionCodec token** |
+| 推理出动作 | flow expert | flow expert | **AR 动作码 + codec 解码**（FM 为可选配置） |
+| 视觉历史 | 基本单帧 | 基本单帧 | **视觉编码器内的时空注意力** |
+| 跨本体 | 共享表示 | 单本体阶段专精 | 统一分组布局 + 只出活跃组 |
+
+## 11. 建议的源码阅读顺序
 
 以下路径相对于本地 `GalaxeaVLA/`。网页不使用服务器绝对文件路径作为链接；在终端或编辑器里搜索方法名即可。
 
@@ -211,3 +298,54 @@ $$x_t=(1-t)A+t\epsilon,\qquad v^*=\epsilon-A$$
 仓库中的 `docs/architecture/g05_architecture_zh.md` 有不少历史通用框架描述，例如 18 层、PaliGemma / SigLIP 示例。阅读当前 Qwen3.5 版本时，以当前任务配置、Qwen3.5 子类和实际调用路径为准。
 
 继续学习可对照：[动作 head](../05-action/02-action-head.md)、[Flow Matching](../02-visual-generation/03-flow-matching.md)、[chunk 与实时控制](../05-action/03-chunking-and-realtime.md)。
+
+## 自测
+
+**1.** ⭐ VLM-as-Actor 和 VLM-as-Encoder 分别指什么？各举代表。
+
+> **答：** **VLM-as-Encoder**（π0、G0）：VLM 只给 action expert 提供条件，真正出动作的是另一套参数（flow expert）。**VLM-as-Actor**（G0.5）：同一个自回归 VLM 直接生成推理 token 和动作 token，动作码再由 ActionCodec 解码成连续控制。
+
+**2.** G0.5 的输入有哪四类？输出序列长什么样？
+
+> **答：** 多视角 RGB（含历史帧）、本体标识、语言指令、本体状态。输出是一条自回归流：可选的 `Subtask / BBox / Trace / ActionHint` 推理段，接着 `<组标记>` + 动作码，按活跃部件组、按残差轮排列。
+
+**3.** 27 维布局是什么？为什么说 27 维不等于 27 自由度？
+
+> **答：** `left_control 9 | left_gripper 1 | right_control 9 | right_gripper 1 | lower_body 7`。它是共享表示的**槽位**，维度不足的机器人补零，不表示每台机器人都有 27 个关节。$\text{representation dimension}\neq\text{physical DoF}$。
+
+**4.** ⭐ 按仓库默认配置，一个部件组的 32 步动作怎么变成码？每轮 8 个码的 8 是什么？
+
+> **答：** 补齐到 9 维、block DCT，切成 4 个 8 步时间块，conv 把动作维 9→8，encoder 在时间维步长 2、2 把 4 个块压成 1，得到 $(B,128,8)$，再做最多 4 个码本（每个 4096 项）的 RVQ。8 是**压缩后动作维方向的 8 个位置**，时间维已压成 1。
+
+**5.** 动作码数量大约怎么算？和 OpenVLA 比省在哪里？
+
+> **答：** 活跃部件组数 × 残差轮数 × 8（加组标记）。`libero_ar` 用 2 轮，一个手臂组约 16 个码；夹爪规则二值化不走 RVQ。OpenVLA 是 $O(H\cdot D)$ 逐标量 token；G0.5 利用了时间压缩、维度相关性、身体结构分组和"不动的组不输出"四种冗余。
+
+**6.** RVQ 的轮数意味着什么？为什么推理时能少用几轮？
+
+> **答：** 每一轮量化上一轮的残差，$z\approx\sum_r c^{(r)}_{i_r}$，轮数越多重建越细。训练时 `quantizer_dropout` 随机只用前几轮，所以前几轮本身就能独立解码出粗运动，推理时可以用少轮换速度。
+
+**7.** 为什么 ActionCodec 要先单独训练，而且需要 token 一致性？
+
+> **答：** 它是 action tokenizer：先在机器人轨迹上学重建（+ commitment），训好冻结，VLA 训练时离线把动作变成码，Qwen 只学预测码本下标。
+> 一致性是因为相邻或近似的运动若编码成完全不同的码序列，自回归模型很难学；代码里用时间平移和幅度缩放构造等价样本，要求编码出相同的码，并对粗层码加更大权重（这份后训练配置里权重为 0）。
+
+**8.** 四个 CoT 字段各管哪一层？loss 算在哪些 token 上？
+
+> **答：** `Subtask` 任务分解、`BBox` 视觉定位、`Trace` 图像上的 2D 夹爪轨迹、`ActionHint` 帧级运动提示，从语义到电机逐层变具体。CE 算在所有生成段（推理 token + 动作码），条件段不算；主模型没有动作回归、flow 或蒸馏 loss。
+
+**9.** 视觉记忆为什么放在视觉编码器里？
+
+> **答：** 很多操作不满足 Markov（杯子被手挡住后当前帧看不到）。直接把 $T$ 帧 × $N$ 个视觉 token 送进语言主干，注意力是 $O((NT)^2)$。G0.5 在视觉编码器里做分解的时空注意力，把历史融进当前帧表示后丢掉历史 token；预训练 5 秒窗口采 6 帧，并随机丢历史帧防过拟合。
+
+**10.** "模型支持 CoT / FM"和"这次运行在用"是一回事吗？
+
+> **答：** 不是。基础配置 `predict_cot: false`、`temporal_freq: 0`；`libero_ar.yaml` 走 AR（FM 权重 0），`libero.yaml` 走 FM（CE 权重 0）。`continuous_action` 只是"启用 FM 分支"，AR 最终也解码出连续动作。必须看最终任务配置。
+
+**11.** G0.5 的预训练 recipe？
+
+> **答：** Qwen3.5 2B 初始化；14 种真实与仿真本体的机器人数据统一到 27 维分组布局，加 web VQA、embodied VQA；VQA 与动作样本 1:4 混合；所有样本同一个 CE，单阶段异构预训练。
+
+**12.** ⭐ 对"跨本体预训练会负迁移"，G0 和 G0.5 的回答有什么不同？
+
+> **答：** G0：加一个单本体（R1 Lite）预训练阶段做专精，再接 flow expert。G0.5：认为问题可能出在动作表示，用统一分组布局 + 学出来的 ActionCodec + 只输出活跃组，把 14 种本体放进一次预训练、一个自回归 VLM。

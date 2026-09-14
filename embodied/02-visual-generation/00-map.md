@@ -6,6 +6,7 @@
 | 篇 | 内容 |
 |---|---|
 | [01 生成模型谱系](01-generative-models.md) | VAE / GAN / AR / Diffusion / Flow 五条路线的取舍、VQ-VAE 与离散化、为什么具身选了 diffusion 和 flow |
+| [01b AE / VAE 从零](01b-ae-vae-from-zero.md) | AE→VAE 逐 tensor 走查、重参数化与 KL 闭式、变分推断与 ELBO（浅）、VQ-VAE、**VQ token ≠ VLM visual token**、为什么主流回到连续 latent + diffusion、重建好的表示 ≠ 适合 dynamics 的表示 |
 | [02 Diffusion](02-diffusion.md) | 前向闭式解、反向去噪、**目标为什么塌成 MSE**、与 score matching 等价、DDIM、CFG、$v$-pred |
 | [03 Flow Matching](03-flow-matching.md) | 速度场视角、Conditional FM、**Rectified Flow 为什么能少步**、与 diffusion 的对照、为什么 VLA 需要它 |
 
