@@ -245,95 +245,95 @@
     ],
     "dirs": [
      {
-      "path": "embodied/01-overview/",
+      "path": "embodied/01-vla/",
       "files": [
-       "embodied/01-overview/00-map.md",
-       "embodied/01-overview/01-paradigms.md"
+       "embodied/01-vla/00-map.md",
+       "embodied/01-vla/01-vla-models.md",
+       "embodied/01-vla/02-gen1-ar-vla.md",
+       "embodied/01-vla/03-pi0-pi05-g0.md",
+       "embodied/01-vla/04-g05-architecture.md",
+       "embodied/01-vla/05-frontier-routes.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/02-visual-generation/",
+      "path": "embodied/02-action/",
       "files": [
-       "embodied/02-visual-generation/00-map.md",
-       "embodied/02-visual-generation/01-generative-models.md",
-       "embodied/02-visual-generation/01b-ae-vae-from-zero.md",
-       "embodied/02-visual-generation/02-diffusion.md",
-       "embodied/02-visual-generation/03-flow-matching.md"
+       "embodied/02-action/00-map.md",
+       "embodied/02-action/01-action-space.md",
+       "embodied/02-action/01b-action-space-from-zero.md",
+       "embodied/02-action/02-action-head.md",
+       "embodied/02-action/03-chunking-and-realtime.md",
+       "embodied/02-action/04-act-and-diffusion-policy.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/03-world-model/",
+      "path": "embodied/03-overview/",
       "files": [
-       "embodied/03-world-model/00-map.md",
-       "embodied/03-world-model/01-world-model-map.md"
+       "embodied/03-overview/00-map.md",
+       "embodied/03-overview/01-paradigms.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/04-jepa/",
+      "path": "embodied/04-data-sim/",
       "files": [
-       "embodied/04-jepa/01-jepa.md"
+       "embodied/04-data-sim/00-map.md",
+       "embodied/04-data-sim/01-data-and-sim2real.md",
+       "embodied/04-data-sim/02-data-types.md",
+       "embodied/04-data-sim/03-simulators.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/05-action/",
+      "path": "embodied/05-eval/",
       "files": [
-       "embodied/05-action/00-map.md",
-       "embodied/05-action/01-action-space.md",
-       "embodied/05-action/01b-action-space-from-zero.md",
-       "embodied/05-action/02-action-head.md",
-       "embodied/05-action/03-chunking-and-realtime.md",
-       "embodied/05-action/04-act-and-diffusion-policy.md"
+       "embodied/05-eval/00-map.md",
+       "embodied/05-eval/01-eval.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/06-vla/",
+      "path": "embodied/06-embodied-rl/",
       "files": [
-       "embodied/06-vla/00-map.md",
-       "embodied/06-vla/01-vla-models.md",
-       "embodied/06-vla/02-gen1-ar-vla.md",
-       "embodied/06-vla/03-pi0-pi05-g0.md",
-       "embodied/06-vla/04-g05-architecture.md",
-       "embodied/06-vla/05-frontier-routes.md"
+       "embodied/06-embodied-rl/00-map.md",
+       "embodied/06-embodied-rl/01-embodied-rl.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/07-data-sim/",
+      "path": "embodied/07-world-model/",
       "files": [
-       "embodied/07-data-sim/00-map.md",
-       "embodied/07-data-sim/01-data-and-sim2real.md",
-       "embodied/07-data-sim/02-data-types.md",
-       "embodied/07-data-sim/03-simulators.md"
+       "embodied/07-world-model/00-map.md",
+       "embodied/07-world-model/01-world-model-map.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/08-embodied-rl/",
+      "path": "embodied/08-handwrite/",
       "files": [
-       "embodied/08-embodied-rl/00-map.md",
-       "embodied/08-embodied-rl/01-embodied-rl.md"
+       "embodied/08-handwrite/00-map.md",
+       "embodied/08-handwrite/01-diffusion-flow.md",
+       "embodied/08-handwrite/02-action-chunking.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/09-eval/",
+      "path": "embodied/09-visual-generation/",
       "files": [
-       "embodied/09-eval/00-map.md",
-       "embodied/09-eval/01-eval.md"
+       "embodied/09-visual-generation/00-map.md",
+       "embodied/09-visual-generation/01-generative-models.md",
+       "embodied/09-visual-generation/01b-ae-vae-from-zero.md",
+       "embodied/09-visual-generation/02-diffusion.md",
+       "embodied/09-visual-generation/03-flow-matching.md"
       ],
       "dirs": []
      },
      {
-      "path": "embodied/10-handwrite/",
+      "path": "embodied/10-jepa/",
       "files": [
-       "embodied/10-handwrite/00-map.md",
-       "embodied/10-handwrite/01-diffusion-flow.md",
-       "embodied/10-handwrite/02-action-chunking.md"
+       "embodied/10-jepa/01-jepa.md"
       ],
       "dirs": []
      }

@@ -371,4 +371,4 @@
 **75.** ⭐ 为什么具身模型常把 SigLIP 和 DINO 并联？
 
 > **答：** 机器人既要"哪个是 red cup"（语言对齐，SigLIP 强），又要"杯口在哪、gripper 离它多远、边缘在哪"（dense spatial，DINOv2 强）。
-> 记：**SigLIP 回答 what，DINOv2 回答 where**。[OpenVLA](../../embodied/06-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip) 就是在 **channel 维**拼接两者（$1024+1152=2176$），序列长度仍然是 256。
+> 记：**SigLIP 回答 what，DINOv2 回答 where**。[OpenVLA](../../embodied/01-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip) 就是在 **channel 维**拼接两者（$1024+1152=2176$），序列长度仍然是 256。

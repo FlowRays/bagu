@@ -69,4 +69,4 @@ CLIP/SigLIP/DINO pretrain → projector alignment → multimodal pretrain → SF
 8. [07 DINOv2 完整走查](07-dinov2.md) — 架构没有魔法，魔法全在训练；防坍缩三件套
 9. [自测题](self-test.md)
 
-相关：[大模型参数构成](../04-distributed-infra/03-model-param-breakdown.md)（vision 塔在超大 MoE 里只占万分之几）；[第一代 VLA](../../embodied/06-vla/02-gen1-ar-vla.md)（OpenVLA 把 DINOv2 和 SigLIP 并联当 VLA 的视觉侧）。
+相关：[大模型参数构成](../04-distributed-infra/03-model-param-breakdown.md)（vision 塔在超大 MoE 里只占万分之几）；[第一代 VLA](../../embodied/01-vla/02-gen1-ar-vla.md)（OpenVLA 把 DINOv2 和 SigLIP 并联当 VLA 的视觉侧）。

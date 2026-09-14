@@ -1,7 +1,7 @@
 # DINOv2 完整走查：架构没有魔法，魔法全在训练
 
 > [02](02-vision-encoder.md#3-dino无标签的自蒸馏) 只给了 DINO 的 loss 一句话。这一篇把 DINOv2 从 ViT 结构一直拆到"为什么不坍缩"。
-> 读它的动机是具身：[OpenVLA](../../embodied/06-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip) 的 vision encoder 就是 DINOv2 + SigLIP 并联。
+> 读它的动机是具身：[OpenVLA](../../embodied/01-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip) 的 vision encoder 就是 DINOv2 + SigLIP 并联。
 
 一句话定位：
 
@@ -350,7 +350,7 @@ $$\boxed{\text{Teacher = 一个更稳定的 online target generator}}$$
 
 $$\boxed{\text{SigLIP 回答 what}\qquad\text{DINOv2 回答 where / 长什么样}}$$
 
-机器人两个都要："哪个是 red cup"（SigLIP）+"它的杯口在哪、gripper 离它多远"（DINOv2）。所以 [OpenVLA 把两个并联](../../embodied/06-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip)。
+机器人两个都要："哪个是 red cup"（SigLIP）+"它的杯口在哪、gripper 离它多远"（DINOv2）。所以 [OpenVLA 把两个并联](../../embodied/01-vla/02-gen1-ar-vla.md#openvla-的视觉侧为什么是-dinov2-加-siglip)。
 
 ## 脑图
 
