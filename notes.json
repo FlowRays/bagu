@@ -362,6 +362,26 @@
     ],
     "dirs": []
    }
+  },
+  {
+   "id": "g05",
+   "title": "G0.5 实验 🔒",
+   "root": "g05.md",
+   "tree": {
+    "path": "g05/",
+    "files": [
+     "g05/00-map.md",
+     "g05/01-eval-pipeline.md",
+     "g05/02-benchmarks.md",
+     "g05/03-model.md",
+     "g05/04-performance.md",
+     "g05/05-defects.md",
+     "g05/06-finetune-generalization.md",
+     "g05/07-reproduction-infra.md",
+     "g05/08-questions.md"
+    ],
+    "dirs": []
+   }
   }
  ]
 }

@@ -22,6 +22,7 @@ BASES = [
     {"id": "embodied", "title": "VLA/WAM 八股笔记", "dir": "embodied", "root": "embodied.md"},
     {"id": "papers",   "title": "论文笔记",         "dir": "papers",   "root": "papers.md"},
     {"id": "ideas",    "title": "想法思考 🔒",      "dir": "ideas",    "root": "ideas.md"},
+    {"id": "g05",      "title": "G0.5 实验 🔒",     "dir": "g05",      "root": "g05.md"},
 ]
 
 

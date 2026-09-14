@@ -19,9 +19,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BASES = [("notes", "bagu.md"), ("embodied", "embodied.md"),
-         ("papers", "papers.md"), ("ideas", "ideas.md")]
+         ("papers", "papers.md"), ("ideas", "ideas.md"), ("g05", "g05.md")]
 # 本地私密 / 加密后才进仓库的文件, 不参与检查
 SKIP = {"interview.md", "oj-sspoffer-48.md", "01-game-directions.md", "02-reading.md"}
+# 整本加密的知识库: 目录下全部跳过(网页上是密文)
+PRIVATE_DIRS = {"ideas", "g05"}
 
 
 def collect():
@@ -32,7 +34,7 @@ def collect():
         if (ROOT / root).exists():
             docs.append(root)
             roots.add(root)
-    return [d for d in docs if Path(d).name not in SKIP], roots
+    return [d for d in docs if Path(d).name not in SKIP and Path(d).parts[0] not in PRIVATE_DIRS], roots
 
 
 def page_title(doc):

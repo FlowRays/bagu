@@ -2,11 +2,20 @@
  "kdf": "PBKDF2-SHA256",
  "iter": 600000,
  "cipher": "AES-256-GCM",
- "salt": "tkORWTdbrE0JXkvs55xeWQ==",
+ "salt": "exoZXgPsdfqsoLYOI1QSSA==",
  "files": {
   "notes/interview.md": "private/interview.enc",
   "notes/oj-sspoffer-48.md": "private/oj-sspoffer-48.enc",
   "ideas/01-game-directions.md": "private/ideas__01-game-directions.enc",
-  "ideas/02-reading.md": "private/ideas__02-reading.enc"
+  "ideas/02-reading.md": "private/ideas__02-reading.enc",
+  "g05/00-map.md": "private/g05__00-map.enc",
+  "g05/01-eval-pipeline.md": "private/g05__01-eval-pipeline.enc",
+  "g05/02-benchmarks.md": "private/g05__02-benchmarks.enc",
+  "g05/03-model.md": "private/g05__03-model.enc",
+  "g05/04-performance.md": "private/g05__04-performance.enc",
+  "g05/05-defects.md": "private/g05__05-defects.enc",
+  "g05/06-finetune-generalization.md": "private/g05__06-finetune-generalization.enc",
+  "g05/07-reproduction-infra.md": "private/g05__07-reproduction-infra.enc",
+  "g05/08-questions.md": "private/g05__08-questions.enc"
  }
 }

@@ -34,7 +34,7 @@ FILES = {
     "notes/oj-sspoffer-48.md": "oj-sspoffer-48",
 }
 # 整本加密的知识库: 目录下所有 .md 都加密
-PRIVATE_DIRS = ["ideas"]
+PRIVATE_DIRS = ["ideas", "g05"]
 
 
 def read_password() -> str:
