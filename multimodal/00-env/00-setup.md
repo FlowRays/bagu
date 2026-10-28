@@ -23,4 +23,4 @@ python3 tools/check_site.py              # 可选：真实浏览器查公式、�
 git add -A && git commit -m "..." && git push github main   # 约 1 分钟后 notes.workforagi.com 更新
 ```
 
-入口：<https://notes.workforagi.com/multimodal/>。图片放在对应模块目录，md 里用相对路径 `![](xxx.png)` 引用即可。
+入口：<https://notes.workforagi.com/multimodal/>。图片放在对应模块目录，md 里用相对路径引用即可（感叹号 + 方括号 + 圆括号里写图片文件名）。

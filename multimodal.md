@@ -17,7 +17,7 @@
 | 0 | [环境](multimodal/00-env/00-setup.md) | 15 min | – | uv 环境，缓存放在 /storage 下 | ✅ |
 | 1 | [表征与 InfoNCE](multimodal/01-infonce/00-notes.md) | 40 min | embedding 空间、InfoNCE、temperature、负样本数量 | 手写 InfoNCE，在 MNIST 上做 SimCLR，用 linear probe 评估 | 进行中 |
 | 2 | CLIP：图文对齐 | 60 min | 双塔结构、对称对比损失、zero-shot 分类、prompt 模板 | open_clip ViT-B/32：CIFAR-10 zero-shot、图文检索 Recall@K、prompt 对比 | 待开始 |
-| 3 | 从零训练 mini-CLIP | 60 min | 冻结 encoder + 投影头；batch size / τ 的影响 | 冻结的视觉和文本编码器 + 两个投影层，在 Flickr 上训练 | 待开始 |
+| 3 | 从零训练 mini-CLIP | 60 min | 冻结 encoder + 投影头；batch size / $\tau$ 的影响 | 冻结的视觉和文本编码器 + 两个投影层，在 Flickr 上训练 | 待开始 |
 | 4 | 表征质量怎么评估 | 40 min | linear probe 和 zero-shot 的区别、CLIP vs DINOv2、modality gap | 两种特征的 probe 对比，UMAP 可视化 modality gap | 待开始 |
 | 5 | 从表征到 MLLM（选学） | 30 min | LLaVA 式 encoder → projector → LLM，visual token | 拆开一个小 VLM，看视觉 token 和 projector 的结构 | 待开始 |
 
