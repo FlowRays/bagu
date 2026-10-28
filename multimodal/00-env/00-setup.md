@@ -15,4 +15,12 @@ source multimodal/env.sh     # 激活 uv 环境 + 缓存放在 /storage + 默认
 ## 站点
 
 笔记站点的仓库就是 `/storage/home/yz979/zheyuan/learn`（GitHub `FlowRays/bagu`，GitHub Pages）。
-新增或删除文件后运行 `python3 tools/build_manifest.py` 更新目录；发布流程见仓库根目录的 `tools/publish.sh`。
+发布流程（本机直接 push，仓库已配置 zheyuan 的 GitHub key）：
+
+```bash
+python3 tools/build_manifest.py          # 新增或删除文件后更新侧边栏目录
+python3 tools/check_site.py              # 可选：真实浏览器查公式、坏链（需设置 PLAYWRIGHT_BROWSERS_PATH=/storage/home/yz979/.cache/ms-playwright）
+git add -A && git commit -m "..." && git push github main   # 约 1 分钟后 notes.workforagi.com 更新
+```
+
+入口：<https://notes.workforagi.com/multimodal/>。图片放在对应模块目录，md 里用相对路径 `![](xxx.png)` 引用即可。
