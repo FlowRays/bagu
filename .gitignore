@@ -19,3 +19,11 @@ ideas/
 
 # 「G0.5 实验」同样整本加密，只在本地留明文
 g05/
+
+# multimodal 学习区：环境、缓存、数据、权重不入库；图片入库（站点要显示）
+.venv/
+.cache/
+data/
+*.pt
+*.log
+!multimodal/**/*.png

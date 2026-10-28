@@ -287,7 +287,14 @@ async function load(path, anchor) {
     $content.innerHTML = `<p class="err">无法加载 ${path} (${e.message})</p>`;
     return;
   }
-  $content.innerHTML = renderMarkdown(text);
+  /* 代码文件 (.py 等) 直接显示成高亮代码, 不走 markdown/公式 */
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  if (ext === 'md') $content.innerHTML = renderMarkdown(text);
+  else {
+    const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lang = { py: 'python', sh: 'bash', toml: 'ini' }[ext] || 'plaintext';
+    $content.innerHTML = `<h1>${path.split('/').pop()}</h1><pre><code class="language-${lang}">${esc}</code></pre>`;
+  }
   document.title = nameOf(path) + ' · 八股笔记';
   const base = path.slice(0, path.lastIndexOf('/') + 1);
   $content.querySelectorAll('img').forEach(im => {
@@ -304,7 +311,7 @@ async function load(path, anchor) {
     if (/^([a-z]+:|#)/i.test(h)) { if (/^[a-z]+:/i.test(h)) a.target = '_blank'; return; }
     const i = h.indexOf('#'), frag = i < 0 ? '' : h.slice(i), href = i < 0 ? h : h.slice(0, i);
     const t = href.startsWith('/') ? href.slice(1) : base + href;
-    if (t.toLowerCase().endsWith('.md')) a.href = '#' + t + frag; else a.href = t + frag;
+    if (/\.(md|py|sh|toml)$/i.test(t)) a.href = '#' + t + frag; else a.href = t + frag;
   });
   $content.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
   $content.querySelectorAll('pre').forEach(pre => {

@@ -19,7 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BASES = [("notes", "bagu.md"), ("embodied", "embodied.md"),
-         ("papers", "papers.md"), ("ideas", "ideas.md"), ("g05", "g05.md")]
+         ("papers", "papers.md"), ("ideas", "ideas.md"), ("g05", "g05.md"),
+         ("multimodal", "multimodal.md")]
 # 本地私密 / 加密后才进仓库的文件, 不参与检查
 SKIP = {"interview.md", "oj-sspoffer-48.md", "01-game-directions.md", "02-reading.md"}
 # 整本加密的知识库: 目录下全部跳过(网页上是密文)
@@ -30,7 +31,8 @@ def collect():
     docs, roots = [], set()
     for d, root in BASES:
         if (ROOT / d).is_dir():
-            docs += sorted(str(p.relative_to(ROOT)) for p in (ROOT / d).rglob("*.md"))
+            docs += sorted(str(p.relative_to(ROOT)) for p in (ROOT / d).rglob("*.md")
+                         if not any(x.startswith(".") for x in p.relative_to(ROOT).parts))
         if (ROOT / root).exists():
             docs.append(root)
             roots.add(root)

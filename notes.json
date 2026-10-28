@@ -382,6 +382,39 @@
     ],
     "dirs": []
    }
+  },
+  {
+   "id": "multimodal",
+   "title": "多模态表征（实践）",
+   "root": "multimodal.md",
+   "tree": {
+    "path": "multimodal/",
+    "files": [
+     "multimodal/env.sh",
+     "multimodal/pyproject.toml"
+    ],
+    "dirs": [
+     {
+      "path": "multimodal/00-env/",
+      "files": [
+       "multimodal/00-env/00-setup.md",
+       "multimodal/00-env/prefetch.py"
+      ],
+      "dirs": []
+     },
+     {
+      "path": "multimodal/01-infonce/",
+      "files": [
+       "multimodal/01-infonce/00-notes.md",
+       "multimodal/01-infonce/_solution.py",
+       "multimodal/01-infonce/check_infonce.py",
+       "multimodal/01-infonce/infonce.py",
+       "multimodal/01-infonce/train_mnist.py"
+      ],
+      "dirs": []
+     }
+    ]
+   }
   }
  ]
 }

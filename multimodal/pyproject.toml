@@ -1,0 +1,29 @@
+[project]
+name = "learn-mm-repr"
+version = "0.1.0"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "torch==2.7.1",
+  "torchvision==0.22.1",
+  "open_clip_torch",
+  "transformers>=4.51",
+  "datasets",
+  "accelerate",
+  "scikit-learn",
+  "umap-learn",
+  "matplotlib",
+  "pillow",
+  "tqdm",
+  "jupyterlab",
+  "ipykernel",
+  "qwen-vl-utils",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }

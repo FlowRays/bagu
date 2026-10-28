@@ -23,7 +23,11 @@ BASES = [
     {"id": "papers",   "title": "论文笔记",         "dir": "papers",   "root": "papers.md"},
     {"id": "ideas",    "title": "想法思考 🔒",      "dir": "ideas",    "root": "ideas.md"},
     {"id": "g05",      "title": "G0.5 实验 🔒",     "dir": "g05",      "root": "g05.md"},
+    {"id": "multimodal", "title": "多模态表征（实践）", "dir": "multimodal", "root": "multimodal.md"},
 ]
+
+# 侧边栏里除了 .md 还列出的代码文件, index.html 会把它们渲染成高亮代码页
+CODE_EXT = (".py", ".sh", ".toml")
 
 
 def encrypted() -> set[str]:
@@ -49,7 +53,8 @@ ENC: set[str] = set()
 
 def walk(d: Path, skip: set[str]) -> dict:
     rel = d.relative_to(ROOT).as_posix() + "/"
-    files = sorted(p.relative_to(ROOT).as_posix() for p in d.glob("*.md")
+    files = sorted(p.relative_to(ROOT).as_posix() for p in d.iterdir()
+                   if p.is_file() and (p.suffix == ".md" or p.suffix in CODE_EXT)
                    if p.relative_to(ROOT).as_posix() not in skip)
     dirs = [walk(s, skip) for s in sorted(d.iterdir())
             if s.is_dir() and not s.name.startswith(".")]
